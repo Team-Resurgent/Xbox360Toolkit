@@ -1,3 +1,3 @@
-#XEX Unpack
+XEX Unpack
 
 XEX Unpack utility library.
