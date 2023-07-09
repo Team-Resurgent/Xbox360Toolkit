@@ -1,3 +1,3 @@
-XEX Toolkit
+Xbox 360 Toolkit
 
-XEX Toolkit library.
+Xbox 360 Toolkit library.
