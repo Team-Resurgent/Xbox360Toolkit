@@ -1,3 +1,3 @@
-XEX Unpack
+XEX Toolkit
 
-XEX Unpack utility library.
+XEX Toolkit library.
