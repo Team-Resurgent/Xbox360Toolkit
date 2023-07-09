@@ -135,8 +135,10 @@ namespace Xbox360Toolkit
             return false;
         }
 
-        public static bool GetDefaultXexFromIso(string filePath, ref byte[] xbeData)
+        public static bool TryGetDefaultXexFromIso(string filePath, out byte[] xbeData)
         {
+            xbeData = Array.Empty<byte>();
+
             if (File.Exists(filePath) == false) 
             {
                 return false;

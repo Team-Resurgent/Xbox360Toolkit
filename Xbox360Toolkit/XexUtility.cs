@@ -357,7 +357,7 @@ namespace Xbox360Toolkit
             return element.FirstNode?.ToString() ?? defaultValue;
         }
 
-        public static bool ExtractXexMetaData(byte[] xexData, ref XexMetaData metaData)
+        public static bool TryExtractXexMetaData(byte[] xexData, out XexMetaData metaData)
         {
             metaData = new XexMetaData
             {

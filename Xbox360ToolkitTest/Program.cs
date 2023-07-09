@@ -11,7 +11,7 @@
             {
                 //var filePath = @"G:\Xbox360\Far Cry 3 (USA, Europe) (En,Fr,De,Es,It,Nl,Pt,Sv,No,Da).iso";
                 var filePath = @"G:\Xbox360\Burnout Paradise (USA).iso";
-                if (Xbox360Toolkit.XisoUtility.GetDefaultXexFromIso(filePath, ref xexData) == false)
+                if (Xbox360Toolkit.XisoUtility.TryGetDefaultXexFromIso(filePath, out xexData) == false)
                 {
                     Console.WriteLine("Failed.");
                     return;
@@ -22,8 +22,7 @@
                 xexData = File.ReadAllBytes("default.xex");
             }
 
-            var metaData = new Xbox360Toolkit.XexUtility.XexMetaData();
-            var result = Xbox360Toolkit.XexUtility.ExtractXexMetaData(xexData, ref metaData);
+            var result = Xbox360Toolkit.XexUtility.TryExtractXexMetaData(xexData, out var metaData);
             if (result == false)
             {
                 Console.WriteLine("Failed.");
