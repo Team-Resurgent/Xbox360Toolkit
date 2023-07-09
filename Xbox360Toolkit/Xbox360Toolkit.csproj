@@ -12,7 +12,7 @@
 		<Authors>EqUiNoX</Authors>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<AssemblyName>Xbox360Toolkit</AssemblyName>
-		<PackageId>Xbox360Unpack</PackageId>
+		<PackageId>Xbox360Toolkit</PackageId>
 		<PackagePrereleaseIdentifier></PackagePrereleaseIdentifier>
 		<PackageVersion>$(AssemblyVersion)$(PackagePrereleaseIdentifier)</PackageVersion>
 		<PackageTags>Xbox 360 toolkit library</PackageTags>
