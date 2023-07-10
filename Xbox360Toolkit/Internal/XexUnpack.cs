@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace Xbox360Toolkit
+namespace Xbox360Toolkit.Internal
 {
     internal unsafe static class XexUnpack
     {

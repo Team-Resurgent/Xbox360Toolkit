@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Xml;
 using System.Xml.Linq;
 using System.Xml.XPath;
+using Xbox360Toolkit.Internal;
 
 namespace Xbox360Toolkit
 {
@@ -270,35 +271,18 @@ namespace Xbox360Toolkit
 
             public string Genre;
         }
-
-        private static uint ConvertEndian(uint value)
-        {
-            return
-                ((value & 0x000000ff) << 24) |
-                ((value & 0x0000ff00) << 8) |
-                ((value & 0x00ff0000) >> 8) |
-                ((value & 0xff000000) >> 24);
-        }
-
-        private static ushort ConvertEndian(ushort value)
-        {
-            return (ushort)(
-                ((value & 0x000ff) << 8) |
-                ((value & 0xff00) >> 8)
-            );
-        }
         
         private static bool SearchField<T>(BinaryReader binaryReader, XexHeader header, uint searchId, out T result) where T : struct
         {
             result = default;
 
             binaryReader.BaseStream.Position = Helpers.SizeOf<XexHeader>();
-            var headerDirectoryEntryCount = ConvertEndian(header.HeaderDirectoryEntryCount);
+            var headerDirectoryEntryCount = Helpers.ConvertEndian(header.HeaderDirectoryEntryCount);
 
             for (var i = 0; i < headerDirectoryEntryCount; i++)
             {
-                var value = ConvertEndian(binaryReader.ReadUInt32());
-                var offset = ConvertEndian(binaryReader.ReadUInt32());
+                var value = Helpers.ConvertEndian(binaryReader.ReadUInt32());
+                var offset = Helpers.ConvertEndian(binaryReader.ReadUInt32());
                 if (value != searchId)
                 {
                     continue;
@@ -324,13 +308,13 @@ namespace Xbox360Toolkit
                     return Array.Empty<byte>();
                 }
 
-                var fileNameLen = ConvertEndian(xsrcHeader.FileNameLen);
+                var fileNameLen = Helpers.ConvertEndian(xsrcHeader.FileNameLen);
                 var fileNameData = xsrcReader.ReadBytes((int)fileNameLen);
                 var fileName = Helpers.GetUtf8String(fileNameData);
 
                 var xsrcBody = Helpers.ByteToType<XsrcBody>(xsrcReader);
-                var decompressedSize = ConvertEndian(xsrcBody.DecompressedSize);
-                var compressedSize = ConvertEndian(xsrcBody.CompressedSize);
+                var decompressedSize = Helpers.ConvertEndian(xsrcBody.DecompressedSize);
+                var compressedSize = Helpers.ConvertEndian(xsrcBody.CompressedSize);
 
                 var compData = xsrcReader.ReadBytes((int)compressedSize);
                 var xmlData = new byte[decompressedSize];
@@ -395,7 +379,7 @@ namespace Xbox360Toolkit
                     return false;
                 }
 
-                var securityInfoPos = ConvertEndian(header.SecurityInfo);
+                var securityInfoPos = Helpers.ConvertEndian(header.SecurityInfo);
                 if (securityInfoPos > xexData.Length - Helpers.SizeOf<XexSecurityInfo>())
                 {
                     System.Diagnostics.Debug.Print("Invalid file length for XexSecurityInfo structure.");
@@ -406,7 +390,7 @@ namespace Xbox360Toolkit
 
                 var securityInfo = Helpers.ByteToType<XexSecurityInfo>(xexReader);
 
-                var regions = ConvertEndian(securityInfo.ImageInfo.GameRegion);
+                var regions = Helpers.ConvertEndian(securityInfo.ImageInfo.GameRegion);
                 if ((regions & 0x000000FF) == 0x000000FF)
                 {
                     metaData.GameRegion |= XexRegion.USA;
@@ -427,10 +411,10 @@ namespace Xbox360Toolkit
                     return false;
                 }
 
-                metaData.TitleId = $"{ConvertEndian(xexExecution.TitleId):X8}";
-                metaData.MediaId = $"{ConvertEndian(xexExecution.MediaId):X8}";
-                metaData.Version = ConvertEndian(xexExecution.Version);
-                metaData.BaseVersion = ConvertEndian(xexExecution.BaseVersion);
+                metaData.TitleId = $"{Helpers.ConvertEndian(xexExecution.TitleId):X8}";
+                metaData.MediaId = $"{Helpers.ConvertEndian(xexExecution.MediaId):X8}";
+                metaData.Version = Helpers.ConvertEndian(xexExecution.Version);
+                metaData.BaseVersion = Helpers.ConvertEndian(xexExecution.BaseVersion);
                 metaData.DiscNum = xexExecution.DiscNum;
                 metaData.DiscTotal = xexExecution.DiscTotal;
 
@@ -443,19 +427,19 @@ namespace Xbox360Toolkit
 
                 var xexFileDataDescriptorPos = xexReader.BaseStream.Position;
 
-                var dataPos = ConvertEndian(header.SizeOfHeaders);
-                var dataLen = xexData.Length - ConvertEndian(header.SizeOfHeaders);
+                var dataPos = Helpers.ConvertEndian(header.SizeOfHeaders);
+                var dataLen = xexData.Length - Helpers.ConvertEndian(header.SizeOfHeaders);
                 xexReader.BaseStream.Position = dataPos;
                 var data = xexReader.ReadBytes((int)dataLen);
 
-                var imageSize = ConvertEndian(securityInfo.ImageSize);
+                var imageSize = Helpers.ConvertEndian(securityInfo.ImageSize);
                 var outBuf = new byte[imageSize];
 
-                var flags = ConvertEndian(xexFileDataDescriptor.Flags);
+                var flags = Helpers.ConvertEndian(xexFileDataDescriptor.Flags);
                 if ((flags & XexDataFlagEncrypted) == XexDataFlagEncrypted)
                 {
-                    var imageFlasgs = ConvertEndian(securityInfo.ImageInfo.ImageFlags);
-                    var sizeOfHeaders = ConvertEndian(header.SizeOfHeaders);
+                    var imageFlasgs = Helpers.ConvertEndian(securityInfo.ImageInfo.ImageFlags);
+                    var sizeOfHeaders = Helpers.ConvertEndian(header.SizeOfHeaders);
                     var xexKey = ((imageFlasgs & XexSecurityFlagMfgSupport) == XexSecurityFlagMfgSupport) ? Xex1Key : Xex2Key;
 
 
@@ -486,10 +470,10 @@ namespace Xbox360Toolkit
                     }
                 }
 
-                var format = ConvertEndian(xexFileDataDescriptor.Format);
+                var format = Helpers.ConvertEndian(xexFileDataDescriptor.Format);
                 if (format == XexDataFormatRaw)
                 {
-                    var fileDataSize = ConvertEndian(xexFileDataDescriptor.Size);
+                    var fileDataSize = Helpers.ConvertEndian(xexFileDataDescriptor.Size);
                     var fileDataCount = fileDataSize / Helpers.SizeOf<XexRawDescriptor>();
 
                     xexReader.BaseStream.Position = xexFileDataDescriptorPos;
@@ -501,8 +485,8 @@ namespace Xbox360Toolkit
                     for (var i = 0; i < fileDataCount; i++)
                     {
                         var rawDescriptor = Helpers.ByteToType<XexRawDescriptor>(xexReader);
-                        var rawDataSize = ConvertEndian(rawDescriptor.DataSize);
-                        var rawZeroSize = ConvertEndian(rawDescriptor.ZeroSize);
+                        var rawDataSize = Helpers.ConvertEndian(rawDescriptor.DataSize);
+                        var rawZeroSize = Helpers.ConvertEndian(rawDescriptor.ZeroSize);
                         if (rawDataSize > 0)
                         {
                             Array.Copy(data, dataOffset, rawData, rawOffset, (int)rawDataSize);
@@ -523,8 +507,8 @@ namespace Xbox360Toolkit
                     xexReader.BaseStream.Position = xexFileDataDescriptorPos;
                     var compressedDescriptor = Helpers.ByteToType<XexCompressedDescriptor>(xexReader);
 
-                    uint windowSize = ConvertEndian(compressedDescriptor.WindowSize);
-                    uint firstSize = ConvertEndian(compressedDescriptor.Size);
+                    uint windowSize = Helpers.ConvertEndian(compressedDescriptor.WindowSize);
+                    uint firstSize = Helpers.ConvertEndian(compressedDescriptor.Size);
 
                     if (XexUnpack.UnpackXexData(data, imageSize, windowSize, firstSize, out var unpacked) == false)
                     {
@@ -553,23 +537,23 @@ namespace Xbox360Toolkit
                     return false;
                 }
 
-                var headerSectionSize = ConvertEndian(headerSectionTable.Size);
+                var headerSectionSize = Helpers.ConvertEndian(headerSectionTable.Size);
                 var headerSectionCount = headerSectionSize / Helpers.SizeOf<XexHeaderSectionEntry>();
                 for (var i = 0; i < headerSectionCount; i++)
                 {
                     var headerSectionEntry = Helpers.ByteToType<XexHeaderSectionEntry>(xexReader);
                     var headerSectionName = Helpers.GetUtf8String(headerSectionEntry.SectionName);
-                    var headerSearchTitle = $"{ConvertEndian(xexExecution.TitleId):X}";
+                    var headerSearchTitle = $"{Helpers.ConvertEndian(xexExecution.TitleId):X}";
                     if (headerSectionName.Equals(headerSearchTitle))
                     {
-                        var virtualSize = ConvertEndian(headerSectionEntry.VirtualSize);
-                        var virtualAddress = ConvertEndian(headerSectionEntry.VirtualAddress);
+                        var virtualSize = Helpers.ConvertEndian(headerSectionEntry.VirtualSize);
+                        var virtualAddress = Helpers.ConvertEndian(headerSectionEntry.VirtualAddress);
 
                         using (var dataStream = new MemoryStream(data))
                         using (var dataReader = new BinaryReader(dataStream))
                         {
 
-                            var xdbfPosition = virtualAddress - ConvertEndian(securityInfo.ImageInfo.LoadAddress);
+                            var xdbfPosition = virtualAddress - Helpers.ConvertEndian(securityInfo.ImageInfo.LoadAddress);
 
                             dataStream.Position = xdbfPosition;
 
@@ -581,7 +565,7 @@ namespace Xbox360Toolkit
                                 return false;
                             }
 
-                            var entryCount = ConvertEndian(xdbfHeader.EntryCount);
+                            var entryCount = Helpers.ConvertEndian(xdbfHeader.EntryCount);
                             var entrySize = entryCount * Helpers.SizeOf<XdbfEntry>();
                             if (xdbfPosition + entrySize >= data.Length)
                             {
@@ -589,7 +573,7 @@ namespace Xbox360Toolkit
                                 return false;
                             }
 
-                            var baseOffset = xdbfPosition + (ConvertEndian(xdbfHeader.EntryTableLen) * Helpers.SizeOf<XdbfEntry>()) + (ConvertEndian(xdbfHeader.freeMemTablLen) * 8) + Helpers.SizeOf<XdbfHeader>();
+                            var baseOffset = xdbfPosition + (Helpers.ConvertEndian(xdbfHeader.EntryTableLen) * Helpers.SizeOf<XdbfEntry>()) + (Helpers.ConvertEndian(xdbfHeader.freeMemTablLen) * 8) + Helpers.SizeOf<XdbfHeader>();
                             if (baseOffset >= data.Length)
                             {
                                 System.Diagnostics.Debug.Print("Invalid XDBF length for XDBF entries.");
@@ -599,11 +583,11 @@ namespace Xbox360Toolkit
                             for (var j = 0; j < entryCount; j++)
                             {
                                 var xdbfEntry = Helpers.ByteToType<XdbfEntry>(dataReader);
-                                var entryType = ConvertEndian(xdbfEntry.Type);
-                                var entryOffset = baseOffset + ConvertEndian(xdbfEntry.Offset);
-                                var entryLength = ConvertEndian(xdbfEntry.Length);
-                                var entryIdentifier1 = ConvertEndian(xdbfEntry.Identifier1);
-                                var entryIdentifier2 = ConvertEndian(xdbfEntry.Identifier2);
+                                var entryType = Helpers.ConvertEndian(xdbfEntry.Type);
+                                var entryOffset = baseOffset + Helpers.ConvertEndian(xdbfEntry.Offset);
+                                var entryLength = Helpers.ConvertEndian(xdbfEntry.Length);
+                                var entryIdentifier1 = Helpers.ConvertEndian(xdbfEntry.Identifier1);
+                                var entryIdentifier2 = Helpers.ConvertEndian(xdbfEntry.Identifier2);
                                 if (entryType == 2 && entryIdentifier1 == 0 && entryIdentifier2 == 0x8000)
                                 {
                                     var tempPosition = dataStream.Position;

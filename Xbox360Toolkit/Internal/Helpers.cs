@@ -2,7 +2,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Xbox360Toolkit
+namespace Xbox360Toolkit.Internal
 {
     internal class Helpers
     {
@@ -50,5 +50,29 @@ namespace Xbox360Toolkit
             return Marshal.SizeOf(typeof(T));
         }
 
+        public static uint ConvertEndian(uint value)
+        {
+            return
+                (value & 0x000000ff) << 24 |
+                (value & 0x0000ff00) << 8 |
+                (value & 0x00ff0000) >> 8 |
+                (value & 0xff000000) >> 24;
+        }
+
+        public static ushort ConvertEndian(ushort value)
+        {
+            return (ushort)(
+                (value & 0x000ff) << 8 |
+                (value & 0xff00) >> 8
+            );
+        }
+
+        public static XgdHeader GetXgdHeaer(byte[] sector)
+        {
+            using var sectorStream = new MemoryStream(sector);
+            using var sectorReader = new BinaryReader(sectorStream);
+            var header = ByteToType<XgdHeader>(sectorReader);
+            return header;
+        }
     }
 }

@@ -1,85 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text;
+using Xbox360Toolkit.Internal;
 
 namespace Xbox360Toolkit
 {
     public static class XisoUtility
     {
-        public const string XEX_FILE_NAME = "default.xex";
-        public const string XGD_IMAGE_MAGIC = "MICROSOFT*XBOX*MEDIA";
-        public const uint XGD_SECTOR_SIZE = 0x800;
-        public const uint XGD_ISO_BASE_SECTOR = 0x20;
-        public const uint XGD_MAGIC_SECTOR_XDKI = XGD_ISO_BASE_SECTOR;
-
-        public const uint XGD_MAGIC_SECTOR_XGD2 = 0x1FB40;
-        public const uint XGD2_PFI_OFFSET = 0xFD8E800;
-        public const uint XGD2_DMI_OFFSET = 0xFD8F000;
-        public const uint XGD2_SS_OFFSET = 0xFD8F800;
-
-        public const uint XGD_MAGIC_SECTOR_XGD3 = 0x4120;
-        public const uint XGD3_PFI_OFFSET = 0x2076800;
-        public const uint XGD3_DMI_OFFSET = 0x2077000;
-        public const uint XGD3_SS_OFFSET = 0x2077800;
-
-        public const uint SVOD_START_SECTOR = XGD_ISO_BASE_SECTOR;
-
-        private struct TreeNodeInfo
-        {
-            public uint DirectorySize { get; set; }
-            public long DirectoryPos { get; set; }
-            public uint Offset { get; set; }
-            public string Path { get; set; }
-        };
-
-        [StructLayout(LayoutKind.Sequential, Pack = 1)]
-        public class XgdHeader
-        {
-            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 20)]
-            public byte[] Magic = Array.Empty<byte>();
-
-            public string MagicString => Helpers.GetUtf8String(Magic);
-
-            public uint RootDirSector;
-
-            public uint RootDirSize;
-
-            public long CreationFileTime;
-
-            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 0x7c8)]
-            public byte[] Padding = Array.Empty<byte>();
-
-            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 20)]
-            public byte[] MagicTail = Array.Empty<byte>();
-
-            public string MagicTailString => Helpers.GetUtf8String(MagicTail);
-        }
-
-        private static XgdHeader GetXgdHeaer(byte[] sector)
-        {
-            using var sectorStream = new MemoryStream(sector);
-            using var sectorReader = new BinaryReader(sectorStream);
-            var header = Helpers.ByteToType<XgdHeader>(sectorReader);
-            return header;
-        }
-
-        public struct XgdInfo
-        {
-            public uint BaseSector;
-            public uint RootDirSector;
-            public uint RootDirSize;
-            public DateTime CreationDateTime;
-        }
-
         private static byte[] ReadSector(BinaryReader binaryReader, uint sector)
         {
-            binaryReader.BaseStream.Position = sector * XGD_SECTOR_SIZE;
-            return binaryReader.ReadBytes((int)XGD_SECTOR_SIZE);
+            binaryReader.BaseStream.Position = sector * Constants.XGD_SECTOR_SIZE;
+            return binaryReader.ReadBytes((int)Constants.XGD_SECTOR_SIZE);
         }
 
-        private static bool GetXgdInfo(BinaryReader binaryReader, ref XgdInfo xgdInfo)
+        private static bool TryGetXgdInfo(BinaryReader binaryReader, out XgdInfo? xgdInfo)
         {
             var found = false;
             var maxSize = binaryReader.BaseStream.Length;
@@ -87,35 +22,35 @@ namespace Xbox360Toolkit
 
             XgdHeader? header = null;
 
-            if (maxSize > ((XGD_MAGIC_SECTOR_XDKI + 1) * XGD_SECTOR_SIZE))
+            if (maxSize > ((Constants.XGD_MAGIC_SECTOR_XDKI + 1) * Constants.XGD_SECTOR_SIZE))
             {
-                var sector = ReadSector(binaryReader, XGD_MAGIC_SECTOR_XDKI);
-                header = GetXgdHeaer(sector);
-                if (header != null && header.MagicString.Equals(XGD_IMAGE_MAGIC) && header.MagicTailString.Equals(XGD_IMAGE_MAGIC))
+                var sector = ReadSector(binaryReader, Constants.XGD_MAGIC_SECTOR_XDKI);
+                header = Helpers.GetXgdHeaer(sector);
+                if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                 {
-                    baseSector = XGD_MAGIC_SECTOR_XDKI - XGD_ISO_BASE_SECTOR;
+                    baseSector = Constants.XGD_MAGIC_SECTOR_XDKI - Constants.XGD_ISO_BASE_SECTOR;
                     found = true;
                 }
             }
 
-            if (found == false && maxSize > ((XGD_MAGIC_SECTOR_XGD3 + 1) * XGD_SECTOR_SIZE))
+            if (found == false && maxSize > ((Constants.XGD_MAGIC_SECTOR_XGD3 + 1) * Constants.XGD_SECTOR_SIZE))
             {
-                var sector = ReadSector(binaryReader, XGD_MAGIC_SECTOR_XGD3);
-                header = GetXgdHeaer(sector);
-                if (header != null && header.MagicString.Equals(XGD_IMAGE_MAGIC) && header.MagicTailString.Equals(XGD_IMAGE_MAGIC))
+                var sector = ReadSector(binaryReader, Constants.XGD_MAGIC_SECTOR_XGD3);
+                header = Helpers.GetXgdHeaer(sector);
+                if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                 {
-                    baseSector = XGD_MAGIC_SECTOR_XGD3 - XGD_ISO_BASE_SECTOR;
+                    baseSector = Constants.XGD_MAGIC_SECTOR_XGD3 - Constants.XGD_ISO_BASE_SECTOR;
                     found = true;
                 }
             }
 
-            if (found == false && maxSize > ((XGD_MAGIC_SECTOR_XGD2 + 1) * XGD_SECTOR_SIZE))
+            if (found == false && maxSize > ((Constants.XGD_MAGIC_SECTOR_XGD2 + 1) * Constants.XGD_SECTOR_SIZE))
             {
-                var sector = ReadSector(binaryReader, XGD_MAGIC_SECTOR_XGD2);
-                header = GetXgdHeaer(sector);
-                if (header != null && header.MagicString.Equals(XGD_IMAGE_MAGIC) && header.MagicTailString.Equals(XGD_IMAGE_MAGIC))
+                var sector = ReadSector(binaryReader, Constants.XGD_MAGIC_SECTOR_XGD2);
+                header = Helpers.GetXgdHeaer(sector);
+                if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                 {
-                    baseSector = XGD_MAGIC_SECTOR_XGD2 - XGD_ISO_BASE_SECTOR;
+                    baseSector = Constants.XGD_MAGIC_SECTOR_XGD2 - Constants.XGD_ISO_BASE_SECTOR;
                     found = true;
                 }
             }
@@ -132,7 +67,17 @@ namespace Xbox360Toolkit
                 return true;
             }
 
+            xgdInfo = null;
             return false;
+        }
+
+        public static bool IsIso(string filePath)
+        {
+            using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var binaryReader = new BinaryReader(fileStream))
+            {
+                return TryGetXgdInfo(binaryReader, out var xgdInfo);
+            }
         }
 
         public static bool TryGetDefaultXexFromIso(string filePath, out byte[] xbeData)
@@ -147,8 +92,7 @@ namespace Xbox360Toolkit
             using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
             using (var binaryReader = new BinaryReader(fileStream))
             {
-                var xgdInfo = new XgdInfo();
-                if (GetXgdInfo(binaryReader, ref xgdInfo) == false)
+                if (TryGetXgdInfo(binaryReader, out var xgdInfo) == false || xgdInfo == null)
                 {
                     return false;
                 }
@@ -161,8 +105,6 @@ namespace Xbox360Toolkit
                 {
                     new TreeNodeInfo
                     {
-                        DirectorySize = rootSize,
-                        DirectoryPos = rootOffset,
                         Offset = 0,
                         Path = string.Empty
                     }
@@ -173,13 +115,12 @@ namespace Xbox360Toolkit
                     var currentTreeNode = treeNodes[0];
                     treeNodes.RemoveAt(0);
 
-                    if ((currentTreeNode.Offset * 4) >= currentTreeNode.DirectorySize)
+                    if ((currentTreeNode.Offset * 4) >= rootSize)
                     {
                         continue;
                     }
 
-                    var currentPosition = (xgdInfo.BaseSector << 11) + currentTreeNode.DirectoryPos + currentTreeNode.Offset * 4;
-                    fileStream.Position = currentPosition;
+                    fileStream.Position = (xgdInfo.BaseSector << 11) + rootOffset + currentTreeNode.Offset * 4;
 
                     var left = binaryReader.ReadUInt16();
                     var right = binaryReader.ReadUInt16();
@@ -190,7 +131,7 @@ namespace Xbox360Toolkit
                     var filenameBytes = binaryReader.ReadBytes(nameLength);
 
                     var filename = Encoding.ASCII.GetString(filenameBytes);
-                    if (filename.Equals(XEX_FILE_NAME, StringComparison.CurrentCultureIgnoreCase))
+                    if (filename.Equals(Constants.XEX_FILE_NAME, StringComparison.CurrentCultureIgnoreCase))
                     {
                         var readSector = sector + xgdInfo.BaseSector;
                         var result = new byte[size];
@@ -219,8 +160,6 @@ namespace Xbox360Toolkit
                     {
                         treeNodes.Add(new TreeNodeInfo
                         {
-                            DirectorySize = currentTreeNode.DirectorySize,
-                            DirectoryPos = currentTreeNode.DirectoryPos,
                             Offset = left,
                             Path = currentTreeNode.Path
                         });
@@ -230,8 +169,6 @@ namespace Xbox360Toolkit
                     {
                         treeNodes.Add(new TreeNodeInfo
                         {
-                            DirectorySize = currentTreeNode.DirectorySize,
-                            DirectoryPos = currentTreeNode.DirectoryPos,
                             Offset = right,
                             Path = currentTreeNode.Path
                         });

@@ -4,16 +4,35 @@
     {
         static void Main()
         {
-            var isoTest = false;
+            var isoTest = true;
 
             var xexData = Array.Empty<byte>();
+
             if (isoTest)
             {
+                var filePath = @"G:\Xbox360\Crysis.1.RF.X360-ZTM\45410968\00007000\801FA873A37D786F8DB0879D89FCEF5245";
                 //var filePath = @"G:\Xbox360\Far Cry 3 (USA, Europe) (En,Fr,De,Es,It,Nl,Pt,Sv,No,Da).iso";
-                var filePath = @"G:\Xbox360\Burnout Paradise (USA).iso";
-                if (Xbox360Toolkit.XisoUtility.TryGetDefaultXexFromIso(filePath, out xexData) == false)
+                //var filePath = @"G:\Xbox360\Burnout Paradise (USA).iso";
+
+                if (Xbox360Toolkit.GodUtility.IsGod(filePath))
                 {
-                    Console.WriteLine("Failed.");
+                    if (Xbox360Toolkit.GodUtility.TryGetDefaultXexFromGod(filePath, out xexData) == false)
+                    {
+                        Console.WriteLine("Failed to read god.");
+                        return;
+                    }
+                }
+                else if (Xbox360Toolkit.XisoUtility.IsIso(filePath))
+                {
+                    if (Xbox360Toolkit.XisoUtility.TryGetDefaultXexFromIso(filePath, out xexData) == false)
+                    {
+                        Console.WriteLine("Failed to read iso.");
+                        return;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Failed (Unrecognized file format).");
                     return;
                 }
             }
