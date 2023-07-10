@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using Xbox360Toolkit.Internal.Models;
 
 namespace Xbox360Toolkit.Internal
 {

@@ -2,29 +2,26 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using Xbox360Toolkit.Internal;
+using Xbox360Toolkit.Internal.Models;
 
-namespace Xbox360Toolkit
+namespace Xbox360Toolkit.Internal.Decoders
 {
-    public static class XisoUtility
+    internal abstract class SectorDecoder : ISectorDecoder
     {
-        private static byte[] ReadSector(BinaryReader binaryReader, uint sector)
-        {
-            binaryReader.BaseStream.Position = sector * Constants.XGD_SECTOR_SIZE;
-            return binaryReader.ReadBytes((int)Constants.XGD_SECTOR_SIZE);
-        }
+        public abstract long TotalSectors();
 
-        private static bool TryGetXgdInfo(BinaryReader binaryReader, out XgdInfo? xgdInfo)
+        public abstract byte[] ReadSector(long sector);
+
+        public bool TryGetXgdInfo(out XgdInfo? xgdInfo)
         {
             var found = false;
-            var maxSize = binaryReader.BaseStream.Length;
             var baseSector = 0U;
 
             XgdHeader? header = null;
 
-            if (maxSize > ((Constants.XGD_MAGIC_SECTOR_XDKI + 1) * Constants.XGD_SECTOR_SIZE))
+            if (TotalSectors() >= Constants.XGD_MAGIC_SECTOR_XDKI)
             {
-                var sector = ReadSector(binaryReader, Constants.XGD_MAGIC_SECTOR_XDKI);
+                var sector = ReadSector(Constants.XGD_MAGIC_SECTOR_XDKI);
                 header = Helpers.GetXgdHeaer(sector);
                 if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                 {
@@ -33,9 +30,9 @@ namespace Xbox360Toolkit
                 }
             }
 
-            if (found == false && maxSize > ((Constants.XGD_MAGIC_SECTOR_XGD3 + 1) * Constants.XGD_SECTOR_SIZE))
+            if (found == false && TotalSectors() >= Constants.XGD_MAGIC_SECTOR_XGD3)
             {
-                var sector = ReadSector(binaryReader, Constants.XGD_MAGIC_SECTOR_XGD3);
+                var sector = ReadSector(Constants.XGD_MAGIC_SECTOR_XGD3);
                 header = Helpers.GetXgdHeaer(sector);
                 if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                 {
@@ -44,9 +41,9 @@ namespace Xbox360Toolkit
                 }
             }
 
-            if (found == false && maxSize > ((Constants.XGD_MAGIC_SECTOR_XGD2 + 1) * Constants.XGD_SECTOR_SIZE))
+            if (found == false && TotalSectors() >= Constants.XGD_MAGIC_SECTOR_XGD2)
             {
-                var sector = ReadSector(binaryReader, Constants.XGD_MAGIC_SECTOR_XGD2);
+                var sector = ReadSector(Constants.XGD_MAGIC_SECTOR_XGD2);
                 header = Helpers.GetXgdHeaer(sector);
                 if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                 {
@@ -71,64 +68,57 @@ namespace Xbox360Toolkit
             return false;
         }
 
-        public static bool IsIso(string filePath)
-        {
-            using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-            using (var binaryReader = new BinaryReader(fileStream))
-            {
-                return TryGetXgdInfo(binaryReader, out var xgdInfo);
-            }
-        }
-
-        public static bool TryGetDefaultXexFromIso(string filePath, out byte[] xbeData)
+        public bool TryGetDefaultXex(out byte[] xbeData)
         {
             xbeData = Array.Empty<byte>();
 
-            if (File.Exists(filePath) == false) 
+            if (TryGetXgdInfo(out var xgdInfo) == false || xgdInfo == null)
             {
                 return false;
             }
 
-            using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-            using (var binaryReader = new BinaryReader(fileStream))
+            var rootSector = xgdInfo.RootDirSector;
+            var rootSize = xgdInfo.RootDirSize;
+            var rootSectors = rootSize >> 11;
+
+            var rootData = new byte[rootSize];
+            for (var i = 0; i < rootSectors; i++)
             {
-                if (TryGetXgdInfo(binaryReader, out var xgdInfo) == false || xgdInfo == null)
+                var sectorData = ReadSector(xgdInfo.BaseSector + rootSector + (uint)i);
+                Array.Copy(sectorData, 0, rootData, i * Constants.XGD_SECTOR_SIZE, Constants.XGD_SECTOR_SIZE);
+            }
+
+            var treeNodes = new List<TreeNodeInfo>
+            {
+                new TreeNodeInfo
                 {
-                    return false;
+                    Offset = 0,
+                    Path = string.Empty
                 }
+            };
 
-                var rootSector = xgdInfo.RootDirSector;
-                var rootSize = xgdInfo.RootDirSize;
-                var rootOffset = (long)rootSector << 11;
-
-                var treeNodes = new List<TreeNodeInfo>
-                {
-                    new TreeNodeInfo
-                    {
-                        Offset = 0,
-                        Path = string.Empty
-                    }
-                };
-
+            using (var rootDataStream = new MemoryStream(rootData))
+            using (var rootDataReader = new BinaryReader(rootDataStream))
+            {
                 while (treeNodes.Count > 0)
                 {
                     var currentTreeNode = treeNodes[0];
                     treeNodes.RemoveAt(0);
 
-                    if ((currentTreeNode.Offset * 4) >= rootSize)
+                    if (currentTreeNode.Offset * 4 >= rootData.Length)
                     {
                         continue;
                     }
 
-                    fileStream.Position = (xgdInfo.BaseSector << 11) + rootOffset + currentTreeNode.Offset * 4;
+                    rootDataStream.Position = currentTreeNode.Offset * 4;
 
-                    var left = binaryReader.ReadUInt16();
-                    var right = binaryReader.ReadUInt16();
-                    var sector = binaryReader.ReadUInt32();
-                    var size = binaryReader.ReadUInt32();
-                    var attribute = binaryReader.ReadByte();
-                    var nameLength = binaryReader.ReadByte();
-                    var filenameBytes = binaryReader.ReadBytes(nameLength);
+                    var left = rootDataReader.ReadUInt16();
+                    var right = rootDataReader.ReadUInt16();
+                    var sector = rootDataReader.ReadUInt32();
+                    var size = rootDataReader.ReadUInt32();
+                    var attribute = rootDataReader.ReadByte();
+                    var nameLength = rootDataReader.ReadByte();
+                    var filenameBytes = rootDataReader.ReadBytes(nameLength);
 
                     var filename = Encoding.ASCII.GetString(filenameBytes);
                     if (filename.Equals(Constants.XEX_FILE_NAME, StringComparison.CurrentCultureIgnoreCase))
@@ -140,8 +130,8 @@ namespace Xbox360Toolkit
                         {
                             while (processed < size)
                             {
-                                var buffer = ReadSector(binaryReader, readSector);
-                                var bytesToCopy = (uint)Math.Min(size - processed, 2048);
+                                var buffer = ReadSector(readSector);
+                                var bytesToCopy = Math.Min(size - processed, 2048);
                                 Array.Copy(buffer, 0, result, processed, bytesToCopy);
                                 readSector++;
                                 processed += bytesToCopy;
@@ -164,7 +154,7 @@ namespace Xbox360Toolkit
                             Path = currentTreeNode.Path
                         });
                     }
-                  
+
                     if (right != 0)
                     {
                         treeNodes.Add(new TreeNodeInfo
@@ -174,10 +164,11 @@ namespace Xbox360Toolkit
                         });
                     }
                 }
+
                 return false;
             }
         }
-    
-    
+
+
     }
 }

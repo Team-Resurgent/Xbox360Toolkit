@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 
-namespace Xbox360Toolkit.Internal
+namespace Xbox360Toolkit.Internal.Models
 {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     internal class XgdHeader

@@ -1,4 +1,6 @@
-﻿namespace Xbox360ToolkitTest
+﻿using Xbox360Toolkit;
+
+namespace Xbox360ToolkitTest
 {
     internal class Program
     {
@@ -14,26 +16,23 @@
                 //var filePath = @"G:\Xbox360\Far Cry 3 (USA, Europe) (En,Fr,De,Es,It,Nl,Pt,Sv,No,Da).iso";
                 //var filePath = @"G:\Xbox360\Burnout Paradise (USA).iso";
 
-                if (Xbox360Toolkit.GodUtility.IsGod(filePath))
+                var xisoUtility = new XisoReader();
+                if (xisoUtility.Mount(filePath) == true && xisoUtility.TryGetDefaultXex(out xexData) == true)
                 {
-                    if (Xbox360Toolkit.GodUtility.TryGetDefaultXexFromGod(filePath, out xexData) == false)
-                    {
-                        Console.WriteLine("Failed to read god.");
-                        return;
-                    }
-                }
-                else if (Xbox360Toolkit.XisoUtility.IsIso(filePath))
-                {
-                    if (Xbox360Toolkit.XisoUtility.TryGetDefaultXexFromIso(filePath, out xexData) == false)
-                    {
-                        Console.WriteLine("Failed to read iso.");
-                        return;
-                    }
+                    Console.WriteLine("Xiso format detected.");
                 }
                 else
                 {
-                    Console.WriteLine("Failed (Unrecognized file format).");
-                    return;
+                    var godUtility = new GodReader();
+                    if (godUtility.Mount(filePath) == true && godUtility.TryGetDefaultXex(out xexData) == true)
+                    {
+                        Console.WriteLine("God format detected.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Unrecognized file format.");
+                        return;
+                    }
                 }
             }
             else
@@ -41,7 +40,7 @@
                 xexData = File.ReadAllBytes("default.xex");
             }
 
-            var result = Xbox360Toolkit.XexUtility.TryExtractXexMetaData(xexData, out var metaData);
+            var result = XexUtility.TryExtractXexMetaData(xexData, out var metaData);
             if (result == false)
             {
                 Console.WriteLine("Failed.");
