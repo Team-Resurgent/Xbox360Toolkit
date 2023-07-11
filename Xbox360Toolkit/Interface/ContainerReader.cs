@@ -12,9 +12,9 @@ namespace Xbox360Toolkit.Interface
 
         public abstract int GetMountCount();
 
-        public bool TryGetDefault(out byte[] xbeData, out ContainerType containerType)
+        public bool TryGetDefault(out byte[] defaultData, out ContainerType containerType)
         {
-            xbeData = Array.Empty<byte>();
+            defaultData = Array.Empty<byte>();
             containerType = ContainerType.Unknown;
 
             var decoder = GetDecoder();
@@ -22,7 +22,7 @@ namespace Xbox360Toolkit.Interface
             {
                 return false;
             }
-            return decoder.TryGetDefault(out xbeData, out containerType);
+            return decoder.TryGetDefault(out defaultData, out containerType);
         }
 
         public bool ReadSector(long sector, out byte[] sectorData)

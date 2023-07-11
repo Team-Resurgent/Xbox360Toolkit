@@ -12,9 +12,9 @@ namespace Xbox360Toolkit.Internal.Decoders
             mFilePath = filePath;
         }
 
-        public override long TotalSectors()
+        public override uint TotalSectors()
         {
-            return new FileInfo(mFilePath).Length / Constants.XGD_SECTOR_SIZE;
+            return (uint)(new FileInfo(mFilePath).Length / Constants.XGD_SECTOR_SIZE);
         }
 
         public override byte[] ReadSector(long sector)

@@ -9,9 +9,9 @@ namespace Xbox360Toolkit.Interface
 {
     public abstract class SectorDecoder : ISectorDecoder
     {
-        public abstract long TotalSectors();
+        public abstract uint TotalSectors();
 
-        public long SectorSize()
+        public uint SectorSize()
         {
             return Constants.XGD_SECTOR_SIZE;
         }
@@ -71,7 +71,7 @@ namespace Xbox360Toolkit.Interface
 
             xgdInfo = new XgdInfo();
 
-            if (found == true)
+            if (found == true && header != null)
             {
                 xgdInfo.BaseSector = baseSector;
                 xgdInfo.RootDirSector = header.RootDirSector;
@@ -83,9 +83,9 @@ namespace Xbox360Toolkit.Interface
             return false;
         }
 
-        public bool TryGetDefault(out byte[] xbeData, out ContainerType containerType)
+        public bool TryGetDefault(out byte[] defaultData, out ContainerType containerType)
         {
-            xbeData = Array.Empty<byte>();
+            defaultData = Array.Empty<byte>();
             containerType = ContainerType.Unknown;
 
             if (TryGetXgdInfo(out var xgdInfo) == false || xgdInfo == null)
@@ -157,7 +157,7 @@ namespace Xbox360Toolkit.Interface
                                 processed += bytesToCopy;
                             }
                         }
-                        xbeData = result;
+                        defaultData = result;
                         return true;
                     }
 

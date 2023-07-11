@@ -37,7 +37,7 @@ namespace Xbox360Toolkit.Internal.Decoders
             return dataFileOffset;
         }
 
-        public override long TotalSectors()
+        public override uint TotalSectors()
         {
             return mGodDetails.SectorCount;
         }

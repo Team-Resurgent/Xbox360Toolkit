@@ -2,8 +2,8 @@
 {
     public interface ISectorDecoder
     {
-        public long TotalSectors();
-        public long SectorSize();
+        public uint TotalSectors();
+        public uint SectorSize();
         public byte[] ReadSector(long sector);
     }
 }
