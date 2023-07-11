@@ -2,17 +2,18 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using Xbox360Toolkit.Internal;
 using Xbox360Toolkit.Internal.Models;
 
-namespace Xbox360Toolkit.Internal.Decoders
+namespace Xbox360Toolkit.Interface
 {
-    internal abstract class SectorDecoder : ISectorDecoder
+    public abstract class SectorDecoder : ISectorDecoder
     {
         public abstract long TotalSectors();
 
         public abstract byte[] ReadSector(long sector);
 
-        public bool TryGetXgdInfo(out XgdInfo? xgdInfo)
+        internal bool TryGetXgdInfo(out XgdInfo? xgdInfo)
         {
             var found = false;
             var baseSector = 0U;
@@ -26,6 +27,17 @@ namespace Xbox360Toolkit.Internal.Decoders
                 if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                 {
                     baseSector = Constants.XGD_MAGIC_SECTOR_XDKI - Constants.XGD_ISO_BASE_SECTOR;
+                    found = true;
+                }
+            }
+
+            if (found == false && TotalSectors() >= Constants.XGD_MAGIC_SECTOR_XGD1)
+            {
+                var sector = ReadSector(Constants.XGD_MAGIC_SECTOR_XGD1);
+                header = Helpers.GetXgdHeaer(sector);
+                if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
+                {
+                    baseSector = Constants.XGD_MAGIC_SECTOR_XGD1 - Constants.XGD_ISO_BASE_SECTOR;
                     found = true;
                 }
             }
@@ -68,9 +80,10 @@ namespace Xbox360Toolkit.Internal.Decoders
             return false;
         }
 
-        public bool TryGetDefaultXex(out byte[] xbeData)
+        public bool TryGetDefault(out byte[] xbeData, out DefaultType defaultType)
         {
             xbeData = Array.Empty<byte>();
+            defaultType = DefaultType.None;
 
             if (TryGetXgdInfo(out var xgdInfo) == false || xgdInfo == null)
             {
@@ -121,8 +134,12 @@ namespace Xbox360Toolkit.Internal.Decoders
                     var filenameBytes = rootDataReader.ReadBytes(nameLength);
 
                     var filename = Encoding.ASCII.GetString(filenameBytes);
-                    if (filename.Equals(Constants.XEX_FILE_NAME, StringComparison.CurrentCultureIgnoreCase))
+                    var isXbe = filename.Equals(Constants.XBE_FILE_NAME, StringComparison.CurrentCultureIgnoreCase);
+                    var isXex = filename.Equals(Constants.XEX_FILE_NAME, StringComparison.CurrentCultureIgnoreCase);
+                    if (isXbe || isXex)
                     {
+                        defaultType = isXbe ? DefaultType.Xbe : DefaultType.Xex;
+
                         var readSector = sector + xgdInfo.BaseSector;
                         var result = new byte[size];
                         var processed = 0U;

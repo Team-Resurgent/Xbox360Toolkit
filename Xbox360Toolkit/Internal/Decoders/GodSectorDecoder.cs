@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using Xbox360Toolkit.Interface;
 using Xbox360Toolkit.Internal.Models;
 
 namespace Xbox360Toolkit.Internal.Decoders

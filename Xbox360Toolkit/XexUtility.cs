@@ -100,8 +100,8 @@ namespace Xbox360Toolkit
             metaData = new XexMetaData
             {
                 GameRegion = 0,
-                TitleId = string.Empty,
-                MediaId = string.Empty,
+                TitleId = 0,
+                MediaId = 0,
                 Version = 0,
                 BaseVersion = 0,
                 DiscNum = 0,
@@ -165,8 +165,8 @@ namespace Xbox360Toolkit
                     return false;
                 }
 
-                metaData.TitleId = $"{Helpers.ConvertEndian(xexExecution.TitleId):X8}";
-                metaData.MediaId = $"{Helpers.ConvertEndian(xexExecution.MediaId):X8}";
+                metaData.TitleId = Helpers.ConvertEndian(xexExecution.TitleId);
+                metaData.MediaId = Helpers.ConvertEndian(xexExecution.MediaId);
                 metaData.Version = Helpers.ConvertEndian(xexExecution.Version);
                 metaData.BaseVersion = Helpers.ConvertEndian(xexExecution.BaseVersion);
                 metaData.DiscNum = xexExecution.DiscNum;

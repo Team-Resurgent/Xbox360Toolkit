@@ -4,9 +4,9 @@
     {
         public XexRegion GameRegion;
 
-        public string TitleId;
+        public uint TitleId;
 
-        public string MediaId;
+        public uint MediaId;
 
         public uint Version;
 

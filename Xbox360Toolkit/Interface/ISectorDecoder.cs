@@ -1,6 +1,6 @@
-﻿namespace Xbox360Toolkit.Internal.Decoders
+﻿namespace Xbox360Toolkit.Interface
 {
-    internal interface ISectorDecoder
+    public interface ISectorDecoder
     {
         public long TotalSectors();
         public byte[] ReadSector(long sector);

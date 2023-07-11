@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using Xbox360Toolkit.Interface;
 using Xbox360Toolkit.Internal;
 using Xbox360Toolkit.Internal.Decoders;
 using Xbox360Toolkit.Internal.Models;
@@ -8,22 +9,41 @@ namespace Xbox360Toolkit
 {
     public class GodReader : IReader
     {
+        private string mFilePath;
+        private int mMountCount;
         private SectorDecoder? mSectorDecoder;
 
-        public bool Mount(string filePath)
+        public GodReader(string filePath)
         {
-            if (File.Exists(filePath) == false)
+            mFilePath = filePath;
+            mMountCount = 0;
+        }
+
+        public SectorDecoder? GetDecoder()
+        {
+            return mSectorDecoder;
+        }
+
+        public bool Mount()
+        {
+            if (mMountCount > 0)
+            {
+                mMountCount++;
+                return true;
+            }
+
+            if (File.Exists(mFilePath) == false)
             {
                 return false;
             }
 
-            var dataPath = filePath + ".data";
+            var dataPath = mFilePath + ".data";
             if (Directory.Exists(dataPath) == false)
             {
                 return false;
             }
 
-            using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var fileStream = new FileStream(mFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
             using (var binaryReader = new BinaryReader(fileStream))
             {
                 var header = Helpers.ByteToType<XCONTENT_HEADER>(binaryReader);
@@ -56,24 +76,40 @@ namespace Xbox360Toolkit
                 }
 
                 mSectorDecoder = sectorDecoder;
+                mMountCount++;
                 return true;
             }
         }
 
-        public bool TryGetDefaultXex(out byte[] xbeData)
+        public void Dismount()
+        {
+            if (mMountCount == 0)
+            {
+                return;
+            }
+            mMountCount--;
+        }
+
+        public int GetMountCount()
+        {
+            return mMountCount;
+        }
+
+        public bool TryGetDefault(out byte[] xbeData, out DefaultType defaultType)
         {
             xbeData = Array.Empty<byte>();
+            defaultType = DefaultType.None;
 
-            if (mSectorDecoder == null)
+            if (mMountCount == 0 || mSectorDecoder == null)
             {
                 return false;
             }
-            return  mSectorDecoder.TryGetDefaultXex(out xbeData);
+            return  mSectorDecoder.TryGetDefault(out xbeData, out defaultType);
         }
 
         public bool ReadSector(long sector, out byte[] sectorData)
         {
-            if (mSectorDecoder == null)
+            if (mMountCount == 0 || mSectorDecoder == null)
             {
                 sectorData = Array.Empty<byte>();
                 return false;
