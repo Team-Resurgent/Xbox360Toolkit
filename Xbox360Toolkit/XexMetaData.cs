@@ -1,6 +1,8 @@
-﻿namespace Xbox360Toolkit
+﻿using System;
+
+namespace Xbox360Toolkit
 {
-    public struct XexMetaData
+    public class XexMetaData
     {
         public XexRegion GameRegion;
 
@@ -27,5 +29,15 @@
         public string Developer;
 
         public string Genre;
+
+        public XexMetaData()
+        {
+            Thumbnail = Array.Empty<byte>();
+            TitleName = string.Empty;
+            Description = string.Empty;
+            Publisher = string.Empty;
+            Developer = string.Empty;
+            Genre = string.Empty;
+        }
     }
 }

@@ -1,28 +1,27 @@
-﻿using System;
-using System.IO;
+﻿using System.IO;
 using Xbox360Toolkit.Interface;
 using Xbox360Toolkit.Internal.Decoders;
 
 namespace Xbox360Toolkit
 {
-    public class XisoReader : IReader
+    public class XisoContainerReader : ContainerReader
     {
         private string mFilePath;
         private int mMountCount;
         private SectorDecoder? mSectorDecoder;
 
-        public XisoReader(string filePath)
+        public XisoContainerReader(string filePath)
         {
             mFilePath = filePath;
             mMountCount = 0;
         }
 
-        public SectorDecoder? GetDecoder()
+        public override SectorDecoder? GetDecoder()
         {
             return mSectorDecoder;
         }
 
-        public bool Mount()
+        public override bool Mount()
         {
             if (mMountCount > 0)
             {
@@ -46,7 +45,7 @@ namespace Xbox360Toolkit
             return true;
         }
 
-        public void Dismount()
+        public override void Dismount()
         {
             if (mMountCount == 0)
             {
@@ -55,32 +54,9 @@ namespace Xbox360Toolkit
             mMountCount--;
         }
 
-        public int GetMountCount()
+        public override int GetMountCount()
         {
             return mMountCount;
-        }
-
-        public bool TryGetDefault(out byte[] xbeData, out DefaultType defaultType)
-        {
-            xbeData = Array.Empty<byte>();
-            defaultType = DefaultType.None;
-
-            if (mMountCount == 0 || mSectorDecoder == null)
-            {
-                return false;
-            }
-            return mSectorDecoder.TryGetDefault(out xbeData, out defaultType);
-        }
-
-        public bool ReadSector(long sector, out byte[] sectorData)
-        {
-            if (mMountCount == 0 || mSectorDecoder == null)
-            {
-                sectorData = Array.Empty<byte>();
-                return false;
-            }
-            sectorData = mSectorDecoder.ReadSector(sector);
-            return true;
         }
     }
 }

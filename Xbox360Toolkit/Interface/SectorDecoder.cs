@@ -11,14 +11,19 @@ namespace Xbox360Toolkit.Interface
     {
         public abstract long TotalSectors();
 
+        public long SectorSize()
+        {
+            return Constants.XGD_SECTOR_SIZE;
+        }
+
         public abstract byte[] ReadSector(long sector);
 
-        internal bool TryGetXgdInfo(out XgdInfo? xgdInfo)
+        internal bool TryGetXgdInfo(out XgdInfo xgdInfo)
         {
             var found = false;
             var baseSector = 0U;
 
-            XgdHeader? header = null;
+            var header = new XgdHeader();
 
             if (TotalSectors() >= Constants.XGD_MAGIC_SECTOR_XDKI)
             {
@@ -64,26 +69,24 @@ namespace Xbox360Toolkit.Interface
                 }
             }
 
-            if (found == true && header != null)
+            xgdInfo = new XgdInfo();
+
+            if (found == true)
             {
-                xgdInfo = new XgdInfo
-                {
-                    BaseSector = baseSector,
-                    RootDirSector = header.RootDirSector,
-                    RootDirSize = header.RootDirSize,
-                    CreationDateTime = DateTime.FromFileTime(header.CreationFileTime)
-                };
+                xgdInfo.BaseSector = baseSector;
+                xgdInfo.RootDirSector = header.RootDirSector;
+                xgdInfo.RootDirSize = header.RootDirSize;
+                xgdInfo.CreationDateTime = DateTime.FromFileTime(header.CreationFileTime);
                 return true;
             }
 
-            xgdInfo = null;
             return false;
         }
 
-        public bool TryGetDefault(out byte[] xbeData, out DefaultType defaultType)
+        public bool TryGetDefault(out byte[] xbeData, out ContainerType containerType)
         {
             xbeData = Array.Empty<byte>();
-            defaultType = DefaultType.None;
+            containerType = ContainerType.Unknown;
 
             if (TryGetXgdInfo(out var xgdInfo) == false || xgdInfo == null)
             {
@@ -138,7 +141,7 @@ namespace Xbox360Toolkit.Interface
                     var isXex = filename.Equals(Constants.XEX_FILE_NAME, StringComparison.CurrentCultureIgnoreCase);
                     if (isXbe || isXex)
                     {
-                        defaultType = isXbe ? DefaultType.Xbe : DefaultType.Xex;
+                        containerType = isXbe ? ContainerType.XboxOriginal : ContainerType.Xbox360;
 
                         var readSector = sector + xgdInfo.BaseSector;
                         var result = new byte[size];

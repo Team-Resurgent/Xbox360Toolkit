@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace Xbox360Toolkit.Internal.Models
+﻿namespace Xbox360Toolkit.Internal.Models
 {
     internal struct GodDetails
     {

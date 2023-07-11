@@ -9,7 +9,7 @@ namespace Xbox360ToolkitTest
             var isoTest = true;
 
             var xexData = Array.Empty<byte>();
-            var defaultType = DefaultType.None;
+            var containerType = ContainerType.Unknown;
 
             if (isoTest)
             {
@@ -19,15 +19,15 @@ namespace Xbox360ToolkitTest
                 //var filePath = @"G:\Xbox360\Far Cry 3 (USA, Europe) (En,Fr,De,Es,It,Nl,Pt,Sv,No,Da).iso";
                 //var filePath = @"G:\Xbox360\Burnout Paradise (USA).iso";
 
-                var xisoUtility = new XisoReader(filePath);
-                if (xisoUtility.Mount() == true && xisoUtility.TryGetDefault(out xexData, out defaultType) == true)
+                var xisoContainerUtility = new XisoContainerReader(filePath);
+                if (xisoContainerUtility.Mount() == true && xisoContainerUtility.TryGetDefault(out xexData, out containerType) == true)
                 {
                     Console.WriteLine("Xiso format detected.");
                 }
                 else
                 {
-                    var godUtility = new GodReader(filePath);
-                    if (godUtility.Mount() == true && godUtility.TryGetDefault(out xexData, out defaultType) == true)
+                    var godContainerUtility = new GodContainerReader(filePath);
+                    if (godContainerUtility.Mount() == true && godContainerUtility.TryGetDefault(out xexData, out containerType) == true)
                     {
                         Console.WriteLine("God format detected.");
                     }

@@ -2,7 +2,7 @@
 
 namespace Xbox360Toolkit.Interface
 {
-    public abstract class Reader : IReader
+    public abstract class ContainerReader : IContainerReader
     {
         public abstract SectorDecoder? GetDecoder();
 
@@ -12,17 +12,17 @@ namespace Xbox360Toolkit.Interface
 
         public abstract int GetMountCount();
 
-        public bool TryGetDefault(out byte[] xbeData, out DefaultType defaultType)
+        public bool TryGetDefault(out byte[] xbeData, out ContainerType containerType)
         {
             xbeData = Array.Empty<byte>();
-            defaultType = DefaultType.None;
+            containerType = ContainerType.Unknown;
 
             var decoder = GetDecoder();
             if (decoder == null)
             {
                 return false;
             }
-            return decoder.TryGetDefault(out xbeData, out defaultType);
+            return decoder.TryGetDefault(out xbeData, out containerType);
         }
 
         public bool ReadSector(long sector, out byte[] sectorData)
