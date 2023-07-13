@@ -190,7 +190,6 @@ namespace Xbox360Toolkit
                     var data = xexReader.ReadBytes((int)dataLen);
 
                     var imageSize = Helpers.ConvertEndian(securityInfo.ImageSize);
-                    var outBuf = new byte[imageSize];
 
                     var flags = Helpers.ConvertEndian(xexFileDataDescriptor.Flags);
                     if ((flags & XexDataFlagEncrypted) == XexDataFlagEncrypted)
@@ -231,7 +230,7 @@ namespace Xbox360Toolkit
                     if (format == XexDataFormatRaw)
                     {
                         var fileDataSize = Helpers.ConvertEndian(xexFileDataDescriptor.Size);
-                        var fileDataCount = fileDataSize / Helpers.SizeOf<XexRawDescriptor>();
+                        var fileDataCount = (fileDataSize - Helpers.SizeOf<XexRawDescriptor>()) / Helpers.SizeOf<XexRawDescriptor>();
 
                         xexReader.BaseStream.Position = xexFileDataDescriptorPos;
 

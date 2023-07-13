@@ -16,7 +16,8 @@ namespace Xbox360ToolkitTest
                 //var filePath = @"G:\Xbox360\Crysis.1.RF.X360-ZTM\45410968\00007000\801FA873A37D786F8DB0879D89FCEF5245";
                 //var filePath = @"G:\Xbox360\MEMORICK - KNIGHTS APPRENT (USA-PAL).iso";
                 //var filePath = @"G:\Xbox360\Barbie Horse Adventures - Wild Horse Rescue (USA).iso";
-                var filePath = @"G:\Xbox360\Far Cry 3 (USA, Europe) (En,Fr,De,Es,It,Nl,Pt,Sv,No,Da).iso";
+                //var filePath = @"G:\Xbox360\Far Cry 3 (USA, Europe) (En,Fr,De,Es,It,Nl,Pt,Sv,No,Da).iso";
+                var filePath = @"G:\Xbox360\007 Legends (USA) (En,Fr,De).iso";
                 //var filePath = @"G:\Xbox360\Burnout Paradise (USA).iso";
 
                 var xisoContainerUtility = new XisoContainerReader(filePath);
