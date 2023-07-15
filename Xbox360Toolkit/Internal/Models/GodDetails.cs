@@ -1,6 +1,6 @@
 ﻿namespace Xbox360Toolkit.Internal.Models
 {
-    internal struct GodDetails
+    internal struct GODDetails
     {
         public string DataPath;
         public uint DataFileCount;

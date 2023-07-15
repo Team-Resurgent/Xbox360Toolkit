@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using Xbox360Toolkit.Interface;
 using Xbox360Toolkit.Internal;
 using Xbox360Toolkit.Internal.Decoders;
@@ -6,20 +7,24 @@ using Xbox360Toolkit.Internal.Models;
 
 namespace Xbox360Toolkit
 {
-    public class GodContainerReader : ContainerReader
+    public class GODContainerReader : ContainerReader
     {
         private string mFilePath;
         private int mMountCount;
         private SectorDecoder? mSectorDecoder;
 
-        public GodContainerReader(string filePath)
+        public GODContainerReader(string filePath)
         {
             mFilePath = filePath;
             mMountCount = 0;
         }
 
-        public override SectorDecoder? GetDecoder()
+        public override SectorDecoder GetDecoder()
         {
+            if (mSectorDecoder == null)
+            {
+                throw new Exception("Container not mounted.");
+            }
             return mSectorDecoder;
         }
 
@@ -60,7 +65,7 @@ namespace Xbox360Toolkit
                     return false;
                 }
 
-                var godDetails = new GodDetails();
+                var godDetails = new GODDetails();
                 godDetails.DataPath = dataPath;
                 godDetails.DataFileCount = Helpers.ConvertEndian(contentMetaData.DataFiles);
                 godDetails.IsEnhancedGDF = (contentMetaData.SvodVolumeDescriptor.Features & (1 << 6)) != 0;
@@ -68,7 +73,7 @@ namespace Xbox360Toolkit
                 godDetails.StartingBlock = (uint)(((contentMetaData.SvodVolumeDescriptor.StartingDataBlock2 << 16) & 0xFF0000) | ((contentMetaData.SvodVolumeDescriptor.StartingDataBlock1 << 8) & 0xFF00) | ((contentMetaData.SvodVolumeDescriptor.StartingDataBlock0) & 0xFF));
                 godDetails.SectorCount = (uint)(((contentMetaData.SvodVolumeDescriptor.NumberOfDataBlocks2 << 16) & 0xFF0000) | ((contentMetaData.SvodVolumeDescriptor.NumberOfDataBlocks1 << 8) & 0xFF00) | ((contentMetaData.SvodVolumeDescriptor.NumberOfDataBlocks0) & 0xFF));
 
-                var sectorDecoder = new GodSectorDecoder(godDetails);
+                var sectorDecoder = new GODSectorDecoder(godDetails);
                 if (sectorDecoder.TryGetXgdInfo(out var xgdInfo) == false || xgdInfo == null)
                 {
                     return false;

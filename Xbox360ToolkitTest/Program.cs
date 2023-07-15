@@ -17,17 +17,20 @@ namespace Xbox360ToolkitTest
                 //var filePath = @"G:\Xbox360\MEMORICK - KNIGHTS APPRENT (USA-PAL).iso";
                 //var filePath = @"G:\Xbox360\Barbie Horse Adventures - Wild Horse Rescue (USA).iso";
                 //var filePath = @"G:\Xbox360\Far Cry 3 (USA, Europe) (En,Fr,De,Es,It,Nl,Pt,Sv,No,Da).iso";
-                var filePath = @"G:\Xbox360\007 Legends (USA) (En,Fr,De).iso";
-                //var filePath = @"G:\Xbox360\Burnout Paradise (USA).iso";
+                //var filePath = @"G:\Xbox360\007 Legends (USA) (En,Fr,De).iso";
+                //var filePath = @"G:\Xbox360\MEMORICK - KNIGHTS APPRENT (USA-PAL).iso";
+                var filePath = @"G:\Xbox360\Burnout Paradise (USA).iso";
 
-                var xisoContainerUtility = new XisoContainerReader(filePath);
+                var xisoContainerUtility = new ISOContainerReader(filePath);
                 if (xisoContainerUtility.Mount() == true && xisoContainerUtility.TryGetDefault(out defaultData, out containerType) == true)
                 {
+                    //CCIUtility.ConvertContainerToCCI(xisoContainerUtility, false, @"G:\Xbox360\Burnout Paradise (USA)-noscrub.cci");
+                    //CCIUtility.ConvertContainerToCCI(xisoContainerUtility, true, @"G:\Xbox360\Burnout Paradise (USA)-scrub.cci");
                     Console.WriteLine("Xiso format detected.");
                 }
                 else
                 {
-                    var godContainerUtility = new GodContainerReader(filePath);
+                    var godContainerUtility = new GODContainerReader(filePath);
                     if (godContainerUtility.Mount() == true && godContainerUtility.TryGetDefault(out defaultData, out containerType) == true)
                     {
                         Console.WriteLine("God format detected.");

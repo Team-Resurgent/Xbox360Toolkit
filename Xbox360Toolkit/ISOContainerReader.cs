@@ -1,23 +1,28 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using Xbox360Toolkit.Interface;
 using Xbox360Toolkit.Internal.Decoders;
 
 namespace Xbox360Toolkit
 {
-    public class XisoContainerReader : ContainerReader
+    public class ISOContainerReader : ContainerReader
     {
         private string mFilePath;
         private int mMountCount;
         private SectorDecoder? mSectorDecoder;
 
-        public XisoContainerReader(string filePath)
+        public ISOContainerReader(string filePath)
         {
             mFilePath = filePath;
             mMountCount = 0;
         }
 
-        public override SectorDecoder? GetDecoder()
+        public override SectorDecoder GetDecoder()
         {
+            if (mSectorDecoder == null)
+            {
+                throw new Exception("Container not mounted.");
+            }
             return mSectorDecoder;
         }
 
@@ -34,7 +39,7 @@ namespace Xbox360Toolkit
                 return false;
             }
 
-            var sectorDecoder = new XisoSectorDecoder(mFilePath);
+            var sectorDecoder = new ISOSectorDecoder(mFilePath);
             if (sectorDecoder.TryGetXgdInfo(out var xgdInfo) == false || xgdInfo == null)
             {
                 return false;

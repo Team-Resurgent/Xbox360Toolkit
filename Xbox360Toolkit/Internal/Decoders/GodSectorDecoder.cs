@@ -4,13 +4,13 @@ using Xbox360Toolkit.Internal.Models;
 
 namespace Xbox360Toolkit.Internal.Decoders
 {
-    internal class GodSectorDecoder : SectorDecoder
+    internal class GODSectorDecoder : SectorDecoder
     {
-        private GodDetails mGodDetails;
+        private GODDetails mGODDetails;
 
-        public GodSectorDecoder(GodDetails godDetails)
+        public GODSectorDecoder(GODDetails godDetails)
         {
-            mGodDetails = godDetails;
+            mGODDetails = godDetails;
         }
 
         private long SectorToAddress(long sector, out uint dataFileIndex)
@@ -18,12 +18,12 @@ namespace Xbox360Toolkit.Internal.Decoders
             if (sector == Constants.SVOD_START_SECTOR || sector == Constants.SVOD_START_SECTOR + 1)
             {
                 dataFileIndex = 0;
-                return mGodDetails.BaseAddress + (sector - Constants.SVOD_START_SECTOR) * Constants.XGD_SECTOR_SIZE;
+                return mGODDetails.BaseAddress + (sector - Constants.SVOD_START_SECTOR) * Constants.XGD_SECTOR_SIZE;
             }
 
-            var adjustedSector = sector - mGodDetails.StartingBlock * 2 + (mGodDetails.IsEnhancedGDF ? 2 : 0);
+            var adjustedSector = sector - mGODDetails.StartingBlock * 2 + (mGODDetails.IsEnhancedGDF ? 2 : 0);
             dataFileIndex = (uint)(adjustedSector / 0x14388);
-            if (dataFileIndex > mGodDetails.DataFileCount)
+            if (dataFileIndex > mGODDetails.DataFileCount)
             {
                 dataFileIndex = 0;
             }
@@ -39,19 +39,20 @@ namespace Xbox360Toolkit.Internal.Decoders
 
         public override uint TotalSectors()
         {
-            return mGodDetails.SectorCount;
+            return mGODDetails.SectorCount;
         }
 
-        public override byte[] ReadSector(long sector)
+        public override bool TryReadSector(long sector, out byte[] sectorData)
         {
             var dataOffset = SectorToAddress(sector, out var dataFileIndex);
-            var filePath = Path.Combine(mGodDetails.DataPath, string.Format("Data{0:D4}", dataFileIndex));
+            var filePath = Path.Combine(mGODDetails.DataPath, string.Format("Data{0:D4}", dataFileIndex));
             using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
             using (var binaryReader = new BinaryReader(fileStream))
             {
                 binaryReader.BaseStream.Position = dataOffset;
-                return binaryReader.ReadBytes((int)Constants.XGD_SECTOR_SIZE);
+                sectorData = binaryReader.ReadBytes((int)Constants.XGD_SECTOR_SIZE);
             }
+            return true;
         }
     }
 }

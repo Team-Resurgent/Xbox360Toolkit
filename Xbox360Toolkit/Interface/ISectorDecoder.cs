@@ -4,6 +4,6 @@
     {
         public uint TotalSectors();
         public uint SectorSize();
-        public byte[] ReadSector(long sector);
+        public bool TryReadSector(long sector, out byte[] sectorData);
     }
 }

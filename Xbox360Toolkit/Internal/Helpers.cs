@@ -75,5 +75,10 @@ namespace Xbox360Toolkit.Internal
             var header = ByteToType<XgdHeader>(sectorReader);
             return header;
         }
+
+        public static uint RoundToMultiple(uint size, uint multiple)
+        {
+            return ((size + multiple - 1) / multiple) * multiple;
+        }
     }
 }
