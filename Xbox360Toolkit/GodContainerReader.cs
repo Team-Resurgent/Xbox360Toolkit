@@ -65,21 +65,24 @@ namespace Xbox360Toolkit
                     return false;
                 }
 
+                var startingBlock = (uint)(((contentMetaData.SvodVolumeDescriptor.StartingDataBlock2 << 16) & 0xFF0000) | ((contentMetaData.SvodVolumeDescriptor.StartingDataBlock1 << 8) & 0xFF00) | ((contentMetaData.SvodVolumeDescriptor.StartingDataBlock0) & 0xFF));
+                var numDataBlocks = (uint)(((contentMetaData.SvodVolumeDescriptor.NumberOfDataBlocks2 << 16) & 0xFF0000) | ((contentMetaData.SvodVolumeDescriptor.NumberOfDataBlocks1 << 8) & 0xFF00) | ((contentMetaData.SvodVolumeDescriptor.NumberOfDataBlocks0) & 0xFF));
+
+
                 var godDetails = new GODDetails();
                 godDetails.DataPath = dataPath;
                 godDetails.DataFileCount = Helpers.ConvertEndian(contentMetaData.DataFiles);
                 godDetails.IsEnhancedGDF = (contentMetaData.SvodVolumeDescriptor.Features & (1 << 6)) != 0;
                 godDetails.BaseAddress = godDetails.IsEnhancedGDF ? 0x2000u : 0x12000u;
-                godDetails.StartingBlock = (uint)(((contentMetaData.SvodVolumeDescriptor.StartingDataBlock2 << 16) & 0xFF0000) | ((contentMetaData.SvodVolumeDescriptor.StartingDataBlock1 << 8) & 0xFF00) | ((contentMetaData.SvodVolumeDescriptor.StartingDataBlock0) & 0xFF));
-                godDetails.SectorCount = (uint)(((contentMetaData.SvodVolumeDescriptor.NumberOfDataBlocks2 << 16) & 0xFF0000) | ((contentMetaData.SvodVolumeDescriptor.NumberOfDataBlocks1 << 8) & 0xFF00) | ((contentMetaData.SvodVolumeDescriptor.NumberOfDataBlocks0) & 0xFF));
+                godDetails.StartingBlock = startingBlock;
+                godDetails.SectorCount = (numDataBlocks + startingBlock) * 2;
 
-                var sectorDecoder = new GODSectorDecoder(godDetails);
-                if (sectorDecoder.TryGetXgdInfo(out var xgdInfo) == false || xgdInfo == null)
+                mSectorDecoder = new GODSectorDecoder(godDetails);
+                if (mSectorDecoder.Init() == false)
                 {
                     return false;
                 }
 
-                mSectorDecoder = sectorDecoder;
                 mMountCount++;
                 return true;
             }

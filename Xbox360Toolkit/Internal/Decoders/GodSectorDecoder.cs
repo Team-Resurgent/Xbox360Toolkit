@@ -45,6 +45,12 @@ namespace Xbox360Toolkit.Internal.Decoders
         public override bool TryReadSector(long sector, out byte[] sectorData)
         {
             var dataOffset = SectorToAddress(sector, out var dataFileIndex);
+            if (dataOffset < 0)
+            {
+                sectorData = new byte[Constants.XGD_SECTOR_SIZE];
+                return true;
+            }
+
             var filePath = Path.Combine(mGODDetails.DataPath, string.Format("Data{0:D4}", dataFileIndex));
             using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
             using (var binaryReader = new BinaryReader(fileStream))

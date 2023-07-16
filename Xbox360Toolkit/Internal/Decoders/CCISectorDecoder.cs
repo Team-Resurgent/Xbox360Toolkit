@@ -15,14 +15,14 @@ namespace Xbox360Toolkit.Internal.Decoders
 
         public override uint TotalSectors()
         {
-            return (uint)mCCIDetails.IndexInfo.Length;
+            return (uint)(mCCIDetails.IndexInfo.Length - 1);
         }
 
         public override bool TryReadSector(long sector, out byte[] sectorData)
         {
             var decodeBuffer = new byte[Constants.XGD_SECTOR_SIZE];
             var position = mCCIDetails.IndexInfo[sector].Value;
-            var compressed = mCCIDetails.IndexInfo[sector].Compressed;
+            var LZ4Compressed = mCCIDetails.IndexInfo[sector].LZ4Compressed;
             var size = (int)(mCCIDetails.IndexInfo[sector + 1].Value - position);
 
             using (var fileStream = new FileStream(mCCIDetails.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
@@ -30,7 +30,7 @@ namespace Xbox360Toolkit.Internal.Decoders
             {
                 fileStream.Position = (long)position;
 
-                if (size < Constants.XGD_SECTOR_SIZE || compressed)
+                if (size != Constants.XGD_SECTOR_SIZE || LZ4Compressed)
                 {
                     var padding = binaryReader.ReadByte();
                     var buffer = binaryReader.ReadBytes(size);
@@ -43,7 +43,7 @@ namespace Xbox360Toolkit.Internal.Decoders
                 }
                 else
                 {
-                    sectorData = binaryReader.ReadBytes(2048);
+                    sectorData = binaryReader.ReadBytes((int)Constants.XGD_SECTOR_SIZE);
                 }
             }
             return true;

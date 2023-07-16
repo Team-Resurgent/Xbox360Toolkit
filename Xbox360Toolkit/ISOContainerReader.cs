@@ -39,13 +39,12 @@ namespace Xbox360Toolkit
                 return false;
             }
 
-            var sectorDecoder = new ISOSectorDecoder(mFilePath);
-            if (sectorDecoder.TryGetXgdInfo(out var xgdInfo) == false || xgdInfo == null)
+            mSectorDecoder = new ISOSectorDecoder(mFilePath);
+            if (mSectorDecoder.Init() == false)
             {
                 return false;
             }
 
-            mSectorDecoder = sectorDecoder;
             mMountCount++;
             return true;
         }

@@ -25,7 +25,7 @@ namespace Xbox360Toolkit.Internal.Decoders
                 binaryReader.BaseStream.Position = sector * Constants.XGD_SECTOR_SIZE;
                 sectorData = binaryReader.ReadBytes((int)Constants.XGD_SECTOR_SIZE);
             }
-            return true;
+            return sectorData.Length == Constants.XGD_SECTOR_SIZE;
         }
     }
 }

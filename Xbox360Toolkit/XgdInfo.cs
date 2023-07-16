@@ -1,8 +1,8 @@
 ﻿using System;
 
-namespace Xbox360Toolkit.Internal.Models
+namespace Xbox360Toolkit
 {
-    internal class XgdInfo
+    public class XgdInfo
     {
         public uint BaseSector;
         public uint RootDirSector;

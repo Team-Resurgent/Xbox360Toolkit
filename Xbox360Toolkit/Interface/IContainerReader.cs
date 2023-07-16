@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using Xbox360Toolkit.Internal.Models;
 
 namespace Xbox360Toolkit.Interface
 {
@@ -10,6 +11,5 @@ namespace Xbox360Toolkit.Interface
         public int GetMountCount();
         public bool TryGetDataSectors(out HashSet<uint> dataSectors);
         public bool TryGetDefault(out byte[] defaultData, out ContainerType containerType);
-        public bool ReadSector(long sector, out byte[] sectorData);
     }
 }

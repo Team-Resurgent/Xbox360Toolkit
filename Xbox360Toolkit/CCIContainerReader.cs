@@ -88,8 +88,8 @@ namespace Xbox360Toolkit
                     var index = binaryReader.ReadUInt32();
                     indexInfo.Add(new CCIIndex
                     {
-                        Value = (index & 0x7FFFFFFF) << indexAlignment,
-                        Compressed = (index & 0x80000000) > 0
+                        Value = (ulong)(index & 0x7FFFFFFF) << indexAlignment,
+                        LZ4Compressed = (index & 0x80000000) > 0
                     });
                 }
 
@@ -99,13 +99,12 @@ namespace Xbox360Toolkit
                     IndexInfo = indexInfo.ToArray()
                 };
 
-                var sectorDecoder = new CCISectorDecoder(cciDetails);
-                if (sectorDecoder.TryGetXgdInfo(out var xgdInfo) == false || xgdInfo == null)
+                mSectorDecoder = new CCISectorDecoder(cciDetails);
+                if (mSectorDecoder.Init() == false)
                 {
                     return false;
                 }
 
-                mSectorDecoder = sectorDecoder;
                 mMountCount++;
                 return true;
 

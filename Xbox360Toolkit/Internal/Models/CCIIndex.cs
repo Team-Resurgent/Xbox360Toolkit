@@ -4,6 +4,6 @@
     {
         public ulong Value;
 
-        public bool Compressed;
+        public bool LZ4Compressed;
     }
 }
