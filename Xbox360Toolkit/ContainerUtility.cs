@@ -2,14 +2,50 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Xbox360Toolkit.Interface;
 using Xbox360Toolkit.Internal;
 using Xbox360Toolkit.Internal.Models;
+using static System.Net.WebRequestMethods;
 
 namespace Xbox360Toolkit
 {
     public static class ContainerUtility
     {
+        public static bool RepackContainerToISO(ContainerReader containerReader, string outputFile)
+        {
+            if (containerReader.GetMountCount() == 0)
+            {
+                return false;
+            }
+
+            if (containerReader.TryGetDataSectors(out var dataSectors) == false)
+            {
+                return false;
+            }
+
+
+
+
+            return true;
+        }
+
+        public static bool ExtractFilesFromContainer(ContainerReader containerReader, string destFilePath)
+        {
+            if (containerReader.GetMountCount() == 0)
+            {
+                return false;
+            }
+
+            if (containerReader.TryExtractFiles(destFilePath) == false)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         public static bool ConvertContainerToISO(ContainerReader containerReader, ProcessingOptions processingOptions, string outputFile)
         {
             if (containerReader.GetMountCount() == 0)
@@ -20,6 +56,12 @@ namespace Xbox360Toolkit
             if (containerReader.TryGetDataSectors(out var dataSectors) == false)
             {
                 return false;
+            }
+
+            var scrubbedSector = new byte[2048];
+            for (var i = 0; i < scrubbedSector.Length; i++)
+            {
+                scrubbedSector[i] = 0xff;
             }
 
             var decoder = containerReader.GetDecoder();
@@ -45,7 +87,7 @@ namespace Xbox360Toolkit
             {
                 for (var i = startSector; i < totalSectors; i++)
                 {
-                    var sectorToWrite = new byte[2048];
+                    var sectorToWrite = scrubbedSector;
                     var writeSector = (processingOptions.HasFlag(ProcessingOptions.ScrubSectors) == false) || dataSectors.Contains(i);
                     if (writeSector == true)
                     {
@@ -73,8 +115,11 @@ namespace Xbox360Toolkit
                 return false;
             }
 
-            var emptySector = new byte[2048];
-            var compressedData = new byte[2048];
+            var scrubbedSector = new byte[2048];
+            for (var i = 0; i < scrubbedSector.Length; i++)
+            {
+                scrubbedSector[i] = 0xff;
+            }
 
             var decoder = containerReader.GetDecoder();
             var xgdInfo = decoder.GetXgdInfo();
@@ -105,7 +150,7 @@ namespace Xbox360Toolkit
                 var headerSize = (uint)32;
                 outputWriter.Write(headerSize);
 
-                var uncompressedSize = (ulong)0;
+                var uncompressedSize = (long)0;
                 outputWriter.Write(uncompressedSize);
 
                 var indexOffset = (ulong)0;
@@ -123,38 +168,69 @@ namespace Xbox360Toolkit
                 var unused = (ushort)0;
                 outputWriter.Write(unused);
 
-                for (var i = startSector; i < totalSectors; i++)
+                var batchSize = (Environment.ProcessorCount / 2) * 5;
+                var options = new ParallelOptions { MaxDegreeOfParallelism = batchSize };
+   
+                for (var i = startSector; i < totalSectors; i += (uint)batchSize)
                 {
-                    var sectorToWrite = emptySector;
-                    var writeSector = (processingOptions.HasFlag(ProcessingOptions.ScrubSectors) == false) || dataSectors.Contains(i);
-                    if (writeSector == true)
+                    var batchSectors = Math.Min(totalSectors - i, batchSize);
+                    var batch = new CCIBatch[batchSectors];
+
+                    Parallel.For(0, batchSectors, batchIndex =>
                     {
-                        if (decoder.TryReadSector(i, out sectorToWrite) == false)
+                        var batchSector = (uint)(i + batchIndex);
+
+                        var sectorToWrite = scrubbedSector;
+                        var writeSector = (processingOptions.HasFlag(ProcessingOptions.ScrubSectors) == false) || dataSectors.Contains(batchSector);
+                        if (writeSector == true)
+                        {
+                            if (decoder.TryReadSector(batchSector, out sectorToWrite) == false)
+                            {
+                                batch[batchIndex].Failed = true;
+                                return;
+                            }
+                        }
+
+                        var compressedData = new byte[2048];
+                        var multiple = (1 << indexAlignment);
+                        var compressedSize = K4os.Compression.LZ4.LZ4Codec.Encode(sectorToWrite, compressedData, K4os.Compression.LZ4.LZ4Level.L12_MAX);
+                        if (compressedSize > 0 && compressedSize < (Constants.XGD_SECTOR_SIZE - (2 * multiple)))
+                        {
+                            var padding = Helpers.RoundToMultiple((uint)compressedSize + 1, (uint)multiple) - (compressedSize + 1);
+
+                            var sectorData = new byte[compressedSize + 1 + padding];
+                            sectorData[0] = (byte)padding;
+                            Array.Copy(compressedData, 0, sectorData, 1, compressedSize);
+
+                            batch[batchIndex].Failed = false;
+                            batch[batchIndex].Buffer = sectorData;
+                            batch[batchIndex].Index = new CCIIndex { Value = (ulong)sectorData.Length, LZ4Compressed = true };
+                        }
+                        else
+                        {
+                            batch[batchIndex].Failed = false;
+                            batch[batchIndex].Buffer = sectorToWrite;
+                            batch[batchIndex].Index = new CCIIndex { Value = (ulong)sectorToWrite.Length, LZ4Compressed = false };
+                        }
+
+                        Interlocked.Add(ref uncompressedSize, Constants.XGD_SECTOR_SIZE);    
+                    });
+
+                    for (var batchIndex = 0; batchIndex < batchSectors; batchIndex++)
+                    {
+                        var batchItem = batch[batchIndex];
+                        if (batchItem.Failed == true)
                         {
                             return false;
                         }
-                    }
+                        outputWriter.Write(batchItem.Buffer);
 
-                    var multiple = (1 << indexAlignment);
-                    var compressedSize = K4os.Compression.LZ4.LZ4Codec.Encode(sectorToWrite, compressedData, K4os.Compression.LZ4.LZ4Level.L12_MAX);
-                    if (compressedSize > 0 && compressedSize < (Constants.XGD_SECTOR_SIZE - (2 * multiple)))
-                    {
-                        var padding = Helpers.RoundToMultiple((uint)compressedSize + 1, (uint)multiple) - (compressedSize + 1);
-                        outputWriter.Write((byte)padding);
-                        outputWriter.Write(compressedData, 0, compressedSize);
-                        if (padding != 0)
+                        if (outputWriter.BaseStream.Position % 4  != 0)
                         {
-                            outputWriter.Write(new byte[padding]);
+                            var oops = 1;
                         }
-                        indexInfo.Add(new CCIIndex { Value = (ulong)(compressedSize + 1 + padding), LZ4Compressed = true });
+                        indexInfo.Add(batchItem.Index);
                     }
-                    else
-                    {
-                        outputWriter.Write(sectorToWrite);
-                        indexInfo.Add(new CCIIndex { Value = Constants.XGD_SECTOR_SIZE, LZ4Compressed = false });
-                    }
-
-                    uncompressedSize += 2048;
                 }
 
                 indexOffset = (ulong)outputStream.Position;
@@ -174,7 +250,7 @@ namespace Xbox360Toolkit
                 outputWriter.Write(indexOffset);
             }
 
-            return true;
+           return true;
         }
     }
 }

@@ -20,12 +20,13 @@ namespace Xbox360Toolkit.Internal.Decoders
         public override bool TryReadSector(long sector, out byte[] sectorData)
         {
             using (var fileStream = new FileStream(mFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-            using (var binaryReader = new BinaryReader(fileStream))
             {
-                binaryReader.BaseStream.Position = sector * Constants.XGD_SECTOR_SIZE;
-                sectorData = binaryReader.ReadBytes((int)Constants.XGD_SECTOR_SIZE);
+                fileStream.Position = sector * Constants.XGD_SECTOR_SIZE;
+                var sectorBuffer = new byte[Constants.XGD_SECTOR_SIZE];
+                var bytesRead = fileStream.Read(sectorBuffer, 0, (int)Constants.XGD_SECTOR_SIZE);
+                sectorData = sectorBuffer;
+                return bytesRead == Constants.XGD_SECTOR_SIZE;
             }
-            return sectorData.Length == Constants.XGD_SECTOR_SIZE;
         }
     }
 }

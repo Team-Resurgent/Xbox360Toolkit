@@ -26,27 +26,35 @@ namespace Xbox360Toolkit
             return mSectorDecoder;
         }
 
-        public override bool Mount()
+        public override bool TryMount()
         {
-            if (mMountCount > 0)
+            try
             {
+                if (mMountCount > 0)
+                {
+                    mMountCount++;
+                    return true;
+                }
+
+                if (File.Exists(mFilePath) == false)
+                {
+                    return false;
+                }
+
+                mSectorDecoder = new ISOSectorDecoder(mFilePath);
+                if (mSectorDecoder.Init() == false)
+                {
+                    return false;
+                }
+
                 mMountCount++;
                 return true;
             }
-
-            if (File.Exists(mFilePath) == false)
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.Print(ex.ToString());
                 return false;
             }
-
-            mSectorDecoder = new ISOSectorDecoder(mFilePath);
-            if (mSectorDecoder.Init() == false)
-            {
-                return false;
-            }
-
-            mMountCount++;
-            return true;
         }
 
         public override void Dismount()
