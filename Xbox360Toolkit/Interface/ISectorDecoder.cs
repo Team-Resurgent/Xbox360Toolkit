@@ -1,6 +1,8 @@
-﻿namespace Xbox360Toolkit.Interface
+﻿using System;
+
+namespace Xbox360Toolkit.Interface
 {
-    public interface ISectorDecoder
+    public interface ISectorDecoder : IDisposable
     {
         public bool Init();
         public XgdInfo GetXgdInfo();

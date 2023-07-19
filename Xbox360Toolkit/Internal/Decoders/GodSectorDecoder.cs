@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using Xbox360Toolkit.Interface;
 using Xbox360Toolkit.Internal.Models;
 
@@ -7,10 +8,21 @@ namespace Xbox360Toolkit.Internal.Decoders
     internal class GODSectorDecoder : SectorDecoder
     {
         private GODDetails mGODDetails;
+        private FileStream[] mFileStreams;
+        private object mMutex;
+        private bool mDisposed;
 
         public GODSectorDecoder(GODDetails godDetails)
         {
             mGODDetails = godDetails;
+            mFileStreams = new FileStream[mGODDetails.DataFileCount];
+            for (var i = 0; i < mGODDetails.DataFileCount; i++)
+            {
+                var filePath = Path.Combine(mGODDetails.DataPath, string.Format("Data{0:D4}", i));
+                mFileStreams[i] = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            }
+            mMutex = new object();
+            mDisposed = false;
         }
 
         private long SectorToAddress(long sector, out uint dataFileIndex)
@@ -51,14 +63,34 @@ namespace Xbox360Toolkit.Internal.Decoders
                 return true;
             }
 
-            var filePath = Path.Combine(mGODDetails.DataPath, string.Format("Data{0:D4}", dataFileIndex));
-            using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-            using (var binaryReader = new BinaryReader(fileStream))
+            sectorData = new byte[Constants.XGD_SECTOR_SIZE];
+            lock (mMutex)
             {
-                binaryReader.BaseStream.Position = dataOffset;
-                sectorData = binaryReader.ReadBytes((int)Constants.XGD_SECTOR_SIZE);
+                mFileStreams[dataFileIndex].Position = dataOffset;
+                var bytesRead = mFileStreams[dataFileIndex].Read(sectorData, 0, (int)Constants.XGD_SECTOR_SIZE);
+                return bytesRead == Constants.XGD_SECTOR_SIZE;
             }
-            return true;
+        }
+
+        public override void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (mDisposed == false)
+            {
+                if (disposing)
+                {
+                    for (var i = 0; i < mGODDetails.DataFileCount; i++)
+                    {
+                        mFileStreams[i].Dispose();
+                    }
+                }
+                mDisposed = true;
+            }
         }
     }
 }

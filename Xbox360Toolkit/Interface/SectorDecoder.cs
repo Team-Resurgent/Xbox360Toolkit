@@ -98,5 +98,10 @@ namespace Xbox360Toolkit.Interface
         }
 
         public abstract bool TryReadSector(long sector, out byte[] sectorData);
+
+        public virtual void Dispose()
+        {
+            throw new NotImplementedException();
+        }
     }
 }

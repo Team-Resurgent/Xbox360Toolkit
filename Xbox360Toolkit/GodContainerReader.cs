@@ -12,6 +12,7 @@ namespace Xbox360Toolkit
         private string mFilePath;
         private int mMountCount;
         private SectorDecoder? mSectorDecoder;
+        private bool mDisposed;
 
         public GODContainerReader(string filePath)
         {
@@ -108,6 +109,24 @@ namespace Xbox360Toolkit
         public override int GetMountCount()
         {
             return mMountCount;
+        }
+
+        public override void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (mDisposed == false)
+            {
+                if (disposing)
+                {
+                    mSectorDecoder?.Dispose();
+                }
+                mDisposed = true;
+            }
         }
     }
 }

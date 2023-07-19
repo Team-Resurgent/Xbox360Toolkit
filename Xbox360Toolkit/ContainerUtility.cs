@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -7,29 +8,28 @@ using System.Threading.Tasks;
 using Xbox360Toolkit.Interface;
 using Xbox360Toolkit.Internal;
 using Xbox360Toolkit.Internal.Models;
-using static System.Net.WebRequestMethods;
 
 namespace Xbox360Toolkit
 {
     public static class ContainerUtility
     {
-        public static bool RepackContainerToISO(ContainerReader containerReader, string outputFile)
-        {
-            if (containerReader.GetMountCount() == 0)
-            {
-                return false;
-            }
+        //public static bool RepackContainerToISO(ContainerReader containerReader, string outputFile)
+        //{
+        //    if (containerReader.GetMountCount() == 0)
+        //    {
+        //        return false;
+        //    }
 
-            if (containerReader.TryGetDataSectors(out var dataSectors) == false)
-            {
-                return false;
-            }
-
-
+        //    if (containerReader.TryGetDataSectors(out var dataSectors) == false)
+        //    {
+        //        return false;
+        //    }
 
 
-            return true;
-        }
+
+
+        //    return true;
+        //}
 
         public static bool ExtractFilesFromContainer(ContainerReader containerReader, string destFilePath)
         {
@@ -46,8 +46,11 @@ namespace Xbox360Toolkit
             return true;
         }
 
-        public static bool ConvertContainerToISO(ContainerReader containerReader, ProcessingOptions processingOptions, string outputFile)
+        public static bool ConvertContainerToISO(ContainerReader containerReader, ProcessingOptions processingOptions, string outputFile, Action<float>? progress)
         {
+            var progressPercent = 0.0f;
+            progress?.Invoke(progressPercent);
+
             if (containerReader.GetMountCount() == 0)
             {
                 return false;
@@ -97,14 +100,25 @@ namespace Xbox360Toolkit
                         }
                     }
                     outputStream.Write(sectorToWrite, 0, sectorToWrite.Length);
+
+                    var currentProgressPercent = (float)Math.Round((i - startSector) / (float)totalSectors, 4);
+                    if (Helpers.IsEqualTo(currentProgressPercent, progressPercent) == false)
+                    {
+                        progress?.Invoke(currentProgressPercent);
+                        Interlocked.Exchange(ref progressPercent, currentProgressPercent);
+                    }
                 }
             }
 
+            progress?.Invoke(1);
             return true;
         }
 
-        public static bool ConvertContainerToCCI(ContainerReader containerReader, ProcessingOptions processingOptions, string outputFile)
+        public static bool ConvertContainerToCCI(ContainerReader containerReader, ProcessingOptions processingOptions, string outputFile, Action<float>? progress)
         {
+            var progressPercent = 0.0f;
+            progress?.Invoke(progressPercent);
+
             if (containerReader.GetMountCount() == 0)
             {
                 return false;
@@ -115,7 +129,7 @@ namespace Xbox360Toolkit
                 return false;
             }
 
-            var scrubbedSector = new byte[2048];
+            var scrubbedSector = new byte[Constants.XGD_SECTOR_SIZE];
             for (var i = 0; i < scrubbedSector.Length; i++)
             {
                 scrubbedSector[i] = 0xff;
@@ -127,7 +141,7 @@ namespace Xbox360Toolkit
             var startSector = 0u;
             if (processingOptions.HasFlag(ProcessingOptions.RemoveVideoPartition) == false)
             {
-                for ( var i = 0u; i < xgdInfo.BaseSector; i++)
+                for (var i = 0u; i < xgdInfo.BaseSector; i++)
                 {
                     dataSectors.Add(i);
                 }
@@ -142,7 +156,7 @@ namespace Xbox360Toolkit
             using (var outputStream = new FileStream(outputFile, FileMode.Create, FileAccess.Write))
             using (var outputWriter = new BinaryWriter(outputStream))
             {
-                var indexInfo = new List<CCIIndex>();
+                var indexInfo = new CCIIndex[totalSectors - startSector];
 
                 var header = (uint)0x4D494343;
                 outputWriter.Write(header);
@@ -168,9 +182,9 @@ namespace Xbox360Toolkit
                 var unused = (ushort)0;
                 outputWriter.Write(unused);
 
-                var batchSize = (Environment.ProcessorCount / 2) * 5;
+                var batchSize = (Environment.ProcessorCount / 2) + 1;
                 var options = new ParallelOptions { MaxDegreeOfParallelism = batchSize };
-   
+
                 for (var i = startSector; i < totalSectors; i += (uint)batchSize)
                 {
                     var batchSectors = Math.Min(totalSectors - i, batchSize);
@@ -191,7 +205,7 @@ namespace Xbox360Toolkit
                             }
                         }
 
-                        var compressedData = new byte[2048];
+                        var compressedData = new byte[Constants.XGD_SECTOR_SIZE];
                         var multiple = (1 << indexAlignment);
                         var compressedSize = K4os.Compression.LZ4.LZ4Codec.Encode(sectorToWrite, compressedData, K4os.Compression.LZ4.LZ4Level.L12_MAX);
                         if (compressedSize > 0 && compressedSize < (Constants.XGD_SECTOR_SIZE - (2 * multiple)))
@@ -213,7 +227,14 @@ namespace Xbox360Toolkit
                             batch[batchIndex].Index = new CCIIndex { Value = (ulong)sectorToWrite.Length, LZ4Compressed = false };
                         }
 
-                        Interlocked.Add(ref uncompressedSize, Constants.XGD_SECTOR_SIZE);    
+                        Interlocked.Add(ref uncompressedSize, Constants.XGD_SECTOR_SIZE);
+
+                        var currentProgressPercent = (float)Math.Round(batchSector / (float)totalSectors, 4);
+                        if (Helpers.IsEqualTo(currentProgressPercent, progressPercent) == false)
+                        {
+                            progress?.Invoke(currentProgressPercent);
+                            Interlocked.Exchange(ref progressPercent, currentProgressPercent);
+                        }
                     });
 
                     for (var batchIndex = 0; batchIndex < batchSectors; batchIndex++)
@@ -224,19 +245,14 @@ namespace Xbox360Toolkit
                             return false;
                         }
                         outputWriter.Write(batchItem.Buffer);
-
-                        if (outputWriter.BaseStream.Position % 4  != 0)
-                        {
-                            var oops = 1;
-                        }
-                        indexInfo.Add(batchItem.Index);
+                        indexInfo[(i - startSector) + batchIndex] = batchItem.Index;
                     }
                 }
 
                 indexOffset = (ulong)outputStream.Position;
 
                 var position = (ulong)headerSize;
-                for (var i = 0; i < indexInfo.Count; i++)
+                for (var i = 0; i < indexInfo.Length; i++)
                 {
                     var index = (uint)(position >> indexAlignment) | (indexInfo[i].LZ4Compressed ? 0x80000000U : 0U);
                     outputWriter.Write(index);
@@ -250,7 +266,8 @@ namespace Xbox360Toolkit
                 outputWriter.Write(indexOffset);
             }
 
-           return true;
+            progress?.Invoke(1);
+            return true;
         }
     }
 }

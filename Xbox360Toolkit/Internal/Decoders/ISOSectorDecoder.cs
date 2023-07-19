@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using Xbox360Toolkit.Interface;
 
 namespace Xbox360Toolkit.Internal.Decoders
@@ -6,10 +7,16 @@ namespace Xbox360Toolkit.Internal.Decoders
     internal class ISOSectorDecoder : SectorDecoder
     {
         private string mFilePath;
+        private FileStream mFileStream;
+        private object mMutex;
+        private bool mDisposed;
 
         public ISOSectorDecoder(string filePath)
         {
             mFilePath = filePath;
+            mFileStream = new FileStream(mFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            mMutex = new object();
+            mDisposed = false;
         }
 
         public override uint TotalSectors()
@@ -19,13 +26,30 @@ namespace Xbox360Toolkit.Internal.Decoders
 
         public override bool TryReadSector(long sector, out byte[] sectorData)
         {
-            using (var fileStream = new FileStream(mFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            sectorData = new byte[Constants.XGD_SECTOR_SIZE];
+            lock (mMutex)
             {
-                fileStream.Position = sector * Constants.XGD_SECTOR_SIZE;
-                var sectorBuffer = new byte[Constants.XGD_SECTOR_SIZE];
-                var bytesRead = fileStream.Read(sectorBuffer, 0, (int)Constants.XGD_SECTOR_SIZE);
-                sectorData = sectorBuffer;
+                mFileStream.Position = sector * Constants.XGD_SECTOR_SIZE;
+                var bytesRead = mFileStream.Read(sectorData, 0, (int)Constants.XGD_SECTOR_SIZE);
                 return bytesRead == Constants.XGD_SECTOR_SIZE;
+            }
+        }
+
+        public override void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (mDisposed == false)
+            {
+                if (disposing)
+                {
+                    mFileStream.Dispose();
+                }
+                mDisposed = true;
             }
         }
     }

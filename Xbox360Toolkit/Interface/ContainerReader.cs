@@ -9,7 +9,7 @@ using System.Drawing;
 
 namespace Xbox360Toolkit.Interface
 {
-    public abstract class ContainerReader : IContainerReader
+    public abstract class ContainerReader : IContainerReader, IDisposable
     {
         public abstract SectorDecoder GetDecoder();
 
@@ -410,5 +410,9 @@ namespace Xbox360Toolkit.Interface
             }
         }
 
+        public virtual void Dispose()
+        {
+            throw new NotImplementedException();
+        }
     }
 }

@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using Xbox360Toolkit.Internal.Models;
@@ -79,6 +80,11 @@ namespace Xbox360Toolkit.Internal
         public static uint RoundToMultiple(uint size, uint multiple)
         {
             return ((size + multiple - 1) / multiple) * multiple;
+        }
+
+        public static bool IsEqualTo(float a, float b)
+        {
+            return Math.Abs(a - b) < 0.001;
         }
     }
 }

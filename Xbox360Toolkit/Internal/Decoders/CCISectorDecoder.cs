@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using Xbox360Toolkit.Interface;
 using Xbox360Toolkit.Internal.Models;
 
@@ -7,10 +8,16 @@ namespace Xbox360Toolkit.Internal.Decoders
     internal class CCISectorDecoder : SectorDecoder
     {
         private CCIDetails mCCIDetails;
+        private FileStream mFileStream;
+        private object mMutex;
+        private bool mDisposed;
 
         public CCISectorDecoder(CCIDetails cciDetails)
         {
             mCCIDetails = cciDetails;
+            mFileStream = new FileStream(mCCIDetails.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            mMutex = new object();
+            mDisposed = false;
         }
 
         public override uint TotalSectors()
@@ -20,33 +27,56 @@ namespace Xbox360Toolkit.Internal.Decoders
 
         public override bool TryReadSector(long sector, out byte[] sectorData)
         {
-            var decodeBuffer = new byte[Constants.XGD_SECTOR_SIZE];
             var position = mCCIDetails.IndexInfo[sector].Value;
             var LZ4Compressed = mCCIDetails.IndexInfo[sector].LZ4Compressed;
             var size = (int)(mCCIDetails.IndexInfo[sector + 1].Value - position);
 
-            using (var fileStream = new FileStream(mCCIDetails.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-            using (var binaryReader = new BinaryReader(fileStream))
+            lock (mMutex)
             {
-                fileStream.Position = (long)position;
-
+                mFileStream.Position = (long)position;
                 if (size != Constants.XGD_SECTOR_SIZE || LZ4Compressed)
                 {
-                    var padding = binaryReader.ReadByte();
-                    var buffer = binaryReader.ReadBytes(size);
-                    var compressedSize = K4os.Compression.LZ4.LZ4Codec.Decode(buffer, 0, size - (padding + 1), decodeBuffer, 0, (int)Constants.XGD_SECTOR_SIZE);
-                    if (compressedSize < 0)
+                    var padding = mFileStream.ReadByte();
+                    var decompressBuffer = new byte[size];
+                    var decompressBytesRead = mFileStream.Read(decompressBuffer, 0, size);
+                    if (decompressBytesRead != size)
                     {
-                        throw new IOException("Decompression failed.");
+                        sectorData = Array.Empty<byte>();
+                        return false;
+                    }
+                    var decodeBuffer = new byte[Constants.XGD_SECTOR_SIZE];
+                    var decompressedSize = K4os.Compression.LZ4.LZ4Codec.Decode(decompressBuffer, 0, size - (padding + 1), decodeBuffer, 0, (int)Constants.XGD_SECTOR_SIZE);
+                    if (decompressedSize < 0)
+                    {
+                        sectorData = Array.Empty<byte>();
+                        return false;
                     }
                     sectorData = decodeBuffer;
+                    return true;
                 }
-                else
-                {
-                    sectorData = binaryReader.ReadBytes((int)Constants.XGD_SECTOR_SIZE);
-                }
+     
+                sectorData = new byte[Constants.XGD_SECTOR_SIZE];
+                var sectorBytesRead = mFileStream.Read(sectorData, 0, (int)Constants.XGD_SECTOR_SIZE);
+                return sectorBytesRead == Constants.XGD_SECTOR_SIZE;
             }
-            return true;
+        }
+
+        public override void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (mDisposed == false)
+            {
+                if (disposing)
+                {
+                    mFileStream.Dispose();
+                }
+                mDisposed = true;
+            }
         }
     }
 }
