@@ -10,32 +10,32 @@ namespace Xbox360Toolkit.Internal
     {
         public static string GetUtf8String(byte[] buffer)
         {
-            var result = string.Empty;
-            for (var i = 0; i < buffer.Length; i++)
+            var length = 0;
+            for (var i = 0; i < buffer.Length; i ++)
             {
-                var value = buffer[i];
-                if (value == 0)
+                if (buffer[i] != 0 || buffer[i + 1] != 0)
                 {
-                    break;
+                    length++;
+                    continue;
                 }
-                result += (char)value;
+                break;
             }
-            return result;
+            return length == 0 ? string.Empty : Encoding.UTF8.GetString(buffer, 0, length);
         }
 
         public static string GetUnicodeString(byte[] buffer)
         {
-            var result = string.Empty;
+            var length = 0;
             for (var i = 0; i < buffer.Length; i += 2)
             {
-                var value = (short)Encoding.Unicode.GetString(buffer, i, 2)[0];
-                if (value == 0)
+                if (buffer[i] != 0 || buffer[i + 1] != 0)
                 {
-                    break;
+                    length += 2;
+                    continue;
                 }
-                result += (char)value;
+                break;
             }
-            return result;
+            return length == 0 ? string.Empty : Encoding.Unicode.GetString(buffer, 0, length);
         }
 
         public static T ByteToType<T>(BinaryReader reader)

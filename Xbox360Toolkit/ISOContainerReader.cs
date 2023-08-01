@@ -27,6 +27,15 @@ namespace Xbox360Toolkit
             return mSectorDecoder;
         }
 
+        public static bool IsISO(string filePath)
+        {
+            if (File.Exists(filePath) == false)
+            {
+                return false;
+            }
+            return Path.GetExtension(filePath).Equals(".iso", StringComparison.CurrentCultureIgnoreCase);
+        }
+
         public override bool TryMount()
         {
             try
@@ -37,7 +46,7 @@ namespace Xbox360Toolkit
                     return true;
                 }
 
-                if (File.Exists(mFilePath) == false)
+                if (IsISO(mFilePath) == false)
                 {
                     return false;
                 }

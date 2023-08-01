@@ -362,7 +362,8 @@ namespace Xbox360Toolkit
                                         var namespaceManager = new XmlNamespaceManager(new NameTable());
                                         namespaceManager.AddNamespace("xlast", "http://www.xboxlive.com/xlast");
 
-                                        var xboxLiveSubmissionDocument = XDocument.Parse(Helpers.GetUnicodeString(xsrcData));
+                                        var documentUnicode = Helpers.GetUnicodeString(xsrcData);
+                                        var xboxLiveSubmissionDocument = XDocument.Parse(documentUnicode);
                                         var gameConfigProjectElement = xboxLiveSubmissionDocument.XPathSelectElement("/xlast:XboxLiveSubmissionProject/xlast:GameConfigProject", namespaceManager);
                                         if (gameConfigProjectElement != null)
                                         {

@@ -29,6 +29,15 @@ namespace Xbox360Toolkit
             return mSectorDecoder;
         }
 
+        public static bool IsCCI(string filePath)
+        {
+            if (File.Exists(filePath) == false)
+            {
+                return false;
+            }
+            return Path.GetExtension(filePath).Equals(".cci", StringComparison.CurrentCultureIgnoreCase);
+        }
+
         public override bool TryMount()
         {
             try
@@ -39,7 +48,7 @@ namespace Xbox360Toolkit
                     return true;
                 }
 
-                if (File.Exists(mFilePath) == false)
+                if (IsCCI(mFilePath) == false)
                 {
                     return false;
                 }

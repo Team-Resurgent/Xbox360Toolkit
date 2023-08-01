@@ -29,6 +29,16 @@ namespace Xbox360Toolkit
             return mSectorDecoder;
         }
 
+        public static bool IsGOD(string filePath)
+        {
+            if (File.Exists(filePath) == false)
+            {
+                return false;
+            }
+            var dataPath = filePath + ".data";
+            return Directory.Exists(dataPath);
+        }
+
         public override bool TryMount()
         {
             try
@@ -39,13 +49,7 @@ namespace Xbox360Toolkit
                     return true;
                 }
 
-                if (File.Exists(mFilePath) == false)
-                {
-                    return false;
-                }
-
-                var dataPath = mFilePath + ".data";
-                if (Directory.Exists(dataPath) == false)
+                if (IsGOD(mFilePath) == false)
                 {
                     return false;
                 }
@@ -73,7 +77,7 @@ namespace Xbox360Toolkit
 
 
                     var godDetails = new GODDetails();
-                    godDetails.DataPath = dataPath;
+                    godDetails.DataPath = mFilePath + ".data";
                     godDetails.DataFileCount = Helpers.ConvertEndian(contentMetaData.DataFiles);
                     godDetails.IsEnhancedGDF = (contentMetaData.SvodVolumeDescriptor.Features & (1 << 6)) != 0;
                     godDetails.BaseAddress = godDetails.IsEnhancedGDF ? 0x2000u : 0x12000u;

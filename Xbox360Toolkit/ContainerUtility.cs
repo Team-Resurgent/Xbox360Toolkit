@@ -31,6 +31,28 @@ namespace Xbox360Toolkit
         //    return true;
         //}
 
+        public static bool TryAutoDetectContainerType(string filePath, out ContainerReader? containerReader)
+        {
+            if (ISOContainerReader.IsISO(filePath))
+            {
+                containerReader = new ISOContainerReader(filePath);
+                return true;
+            }
+            else if (CCIContainerReader.IsCCI(filePath))
+            {
+                containerReader = new CCIContainerReader(filePath);
+                return true;
+            }
+            else if (GODContainerReader.IsGOD(filePath))
+            {
+                containerReader = new CCIContainerReader(filePath);
+                return true;
+            }
+ 
+            containerReader = null;
+            return false;
+        }
+
         public static bool ExtractFilesFromContainer(ContainerReader containerReader, string destFilePath)
         {
             if (containerReader.GetMountCount() == 0)
