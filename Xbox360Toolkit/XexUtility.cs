@@ -86,13 +86,26 @@ namespace Xbox360Toolkit
 
         private static string GetLocalizedElementString(XDocument document, XmlNamespaceManager namespaceManager, string id, string defaultValue)
         {
-            var element = document.XPathSelectElement($"/xlast:XboxLiveSubmissionProject/xlast:GameConfigProject/xlast:LocalizedStrings/xlast:LocalizedString[@id='{id}']/xlast:Translation", namespaceManager);
-            if (element == null)
+            var elements = document.XPathSelectElements($"/xlast:XboxLiveSubmissionProject/xlast:GameConfigProject/xlast:LocalizedStrings/xlast:LocalizedString[@id='{id}']/xlast:Translation", namespaceManager);
+            if (elements.Count() == 0)
             {
                 return defaultValue;
             }
 
-            return element.FirstNode?.ToString() ?? defaultValue;
+            const string desiredLanguage = "en-US";
+
+            var result = elements.First().FirstNode.ToString();
+            foreach (var element in elements)
+            {
+                var locale = element.FirstAttribute.Value;
+                if (string.Equals(locale, desiredLanguage) == true) 
+                {
+                    result = element.Value;
+                    break;
+                }
+            }
+
+            return result; 
         }
 
         public static bool TryExtractXexMetaData(byte[] xexData, out XexMetaData metaData)
@@ -380,6 +393,7 @@ namespace Xbox360Toolkit
                                             var sellTextStringIdAttribue = productInformationElement.Attribute(XName.Get("sellTextStringId"));
                                             if (sellTextStringIdAttribue != null)
                                             {
+                                                //&lt;Translated text&gt;
                                                 metaData.Description = GetLocalizedElementString(xboxLiveSubmissionDocument, namespaceManager, sellTextStringIdAttribue.Value, sellTextStringIdAttribue.Value);
                                             }
 

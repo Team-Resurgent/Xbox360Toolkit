@@ -7,6 +7,7 @@ namespace Xbox360Toolkit
     {
         USA = 1,
         Japan = 2,
-        Europe = 4
+        Europe = 4,
+        Global = 7
     }
 }
