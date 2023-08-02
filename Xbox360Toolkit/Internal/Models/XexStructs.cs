@@ -211,4 +211,17 @@ namespace Xbox360Toolkit.Internal.Models
 
         public uint CompressedSize;
     }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    internal struct XstrHeader
+    {
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 0x4)]
+        public byte[] Magic;
+
+        public uint Version;
+
+        public uint Size;
+
+        public ushort EntryCount;
+    }
 }

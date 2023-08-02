@@ -25,7 +25,7 @@ namespace Xbox360Toolkit
         private static readonly uint XexDataFormatDeltaCompressed = 0x3;
 
         private static readonly uint XSRC = 0x58535243;
-        
+
         private static bool SearchField<T>(BinaryReader binaryReader, XexHeader header, uint searchId, out T result) where T : struct
         {
             result = default;
@@ -349,6 +349,7 @@ namespace Xbox360Toolkit
                                     return false;
                                 }
 
+
                                 for (var j = 0; j < entryCount; j++)
                                 {
                                     var xdbfEntry = Helpers.ByteToType<XdbfEntry>(dataReader);
@@ -357,7 +358,31 @@ namespace Xbox360Toolkit
                                     var entryLength = Helpers.ConvertEndian(xdbfEntry.Length);
                                     var entryIdentifier1 = Helpers.ConvertEndian(xdbfEntry.Identifier1);
                                     var entryIdentifier2 = Helpers.ConvertEndian(xdbfEntry.Identifier2);
-                                    if (entryType == 2 && entryIdentifier1 == 0 && entryIdentifier2 == 0x8000)
+
+                                    if (entryType == 3 && entryIdentifier1 == 0 && entryIdentifier2 == 1)
+                                    {
+                                        var tempPosition = dataStream.Position;
+                                        dataStream.Position = entryOffset;
+
+                                        var xstrHeader = Helpers.ByteToType<XstrHeader>(dataReader);
+                                        if (Helpers.GetUtf8String(xstrHeader.Magic) == "XSTR")
+                                        {
+                                            var xstrSize = Helpers.ConvertEndian(xstrHeader.Size);
+                                            var xstrEntryCount = Helpers.ConvertEndian(xstrHeader.EntryCount);
+
+                                            for (i = 0; i < xstrEntryCount; i++)
+                                            {
+                                                var xstrType = Helpers.ConvertEndian(dataReader.ReadUInt16());
+                                                var xstrLen = Helpers.ConvertEndian(dataReader.ReadUInt16());
+                                                var xstrrValue = Helpers.GetUtf8String(dataReader.ReadBytes(xstrLen));
+                                                if (xstrType == 32768)
+                                                {
+                                                    metaData.TitleName = xstrrValue;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else if (entryType == 2 && entryIdentifier1 == 0 && entryIdentifier2 == 0x8000)
                                     {
                                         var tempPosition = dataStream.Position;
                                         dataStream.Position = entryOffset;
@@ -383,7 +408,7 @@ namespace Xbox360Toolkit
                                             var titleNameAttribue = gameConfigProjectElement.Attribute(XName.Get("titleName"));
                                             if (titleNameAttribue != null)
                                             {
-                                                metaData.TitleName = GetLocalizedElementString(xboxLiveSubmissionDocument, namespaceManager, "32768", titleNameAttribue.Value);
+                                                metaData.TitleName = GetLocalizedElementString(xboxLiveSubmissionDocument, namespaceManager, "32768", metaData.TitleName);
                                             }
                                         }
 
