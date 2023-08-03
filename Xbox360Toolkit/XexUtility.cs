@@ -86,21 +86,21 @@ namespace Xbox360Toolkit
 
         private static string GetLocalizedElementString(XDocument document, XmlNamespaceManager namespaceManager, string id, string defaultValue)
         {
-            var elements = document.XPathSelectElements($"/xlast:XboxLiveSubmissionProject/xlast:GameConfigProject/xlast:LocalizedStrings/xlast:LocalizedString[@id='{id}']/xlast:Translation", namespaceManager);
-            if (elements.Count() == 0)
+            var elements = document.XPathSelectElements($"/xlast:XboxLiveSubmissionProject/xlast:GameConfigProject/xlast:LocalizedStrings/xlast:LocalizedString[@id='{id}']/xlast:Translation", namespaceManager).ToArray();
+            if (elements == null || elements.Length == 0)
             {
                 return defaultValue;
             }
 
             const string desiredLanguage = "en-US";
 
-            var result = elements.First().FirstNode.ToString();
-            foreach (var element in elements)
+            var result = elements[0].Value;
+            for (int i = 0; i < elements.Length; i++)
             {
-                var locale = element.FirstAttribute.Value;
+                var locale = elements[i].FirstAttribute.Value;
                 if (string.Equals(locale, desiredLanguage) == true) 
                 {
-                    result = element.Value;
+                    result = elements[i].Value;
                     break;
                 }
             }

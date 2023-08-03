@@ -13,7 +13,7 @@ namespace Xbox360Toolkit.Internal
             var length = 0;
             for (var i = 0; i < buffer.Length; i ++)
             {
-                if (buffer[i] != 0 || buffer[i + 1] != 0)
+                if (buffer[i] != 0)
                 {
                     length++;
                     continue;
