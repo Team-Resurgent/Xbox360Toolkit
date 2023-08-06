@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -12,13 +13,12 @@ namespace Xbox360Toolkit
 {
     public static partial class XexUtility
     {
-        private static readonly byte[] Xex1Key = { 0xA2, 0x6C, 0x10, 0xF7, 0x1F, 0xD9, 0x35, 0xE9, 0x8B, 0x99, 0x92, 0x2C, 0xE9, 0x32, 0x15, 0x72 };
-        private static readonly byte[] Xex2Key = { 0x20, 0xB1, 0x85, 0xA5, 0x9D, 0x28, 0xFD, 0xC3, 0x40, 0x58, 0x3F, 0xBB, 0x08, 0x96, 0xBF, 0x91 };
+        private static readonly byte[] XexDevkitKey = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+        private static readonly byte[] XexRetailKey = { 0x20, 0xB1, 0x85, 0xA5, 0x9D, 0x28, 0xFD, 0xC3, 0x40, 0x58, 0x3F, 0xBB, 0x08, 0x96, 0xBF, 0x91 };
 
         private static readonly uint XexExecutionId = 0x400;
         private static readonly uint XexHeaderSectionTableId = 0x2;
         private static readonly uint XexFileDataDescriptorId = 0x3;
-        private static readonly uint XexSecurityFlagMfgSupport = 0x4;
         private static readonly uint XexDataFlagEncrypted = 0x1;
         private static readonly uint XexDataFormatRaw = 0x1;
         private static readonly uint XexDataFormatCompressed = 0x2;
@@ -108,6 +108,133 @@ namespace Xbox360Toolkit
             return result; 
         }
 
+        private static bool TryDecrypt(XexContext context, byte[] xexKey, byte[] input, out byte[] result)
+        {
+            result = Array.Empty<byte>();
+            try
+            {
+                using (var aes1 = Aes.Create())
+                {
+                    aes1.Padding = PaddingMode.None;
+                    aes1.Key = xexKey;
+                    aes1.IV = new byte[16];
+                    using (var aes1Decryptor = aes1.CreateDecryptor())
+                    {
+                        var imageKey = context.SecurityInfo.ImageInfo.ImageKey;
+                        var decryptedKey = aes1Decryptor.TransformFinalBlock(imageKey, 0, imageKey.Length);
+                        if (decryptedKey == null)
+                        {
+                            return false;
+                        }
+
+                        var blockMultiple = Helpers.RoundToMultiple((uint)input.Length, 16);
+                        var paddingNeeded = blockMultiple - input.Length;
+                        var decryptBuffer = paddingNeeded > 0 ? new byte[input.Length + paddingNeeded] : input;
+                        if (paddingNeeded > 0)
+                        {
+                            Array.Copy(input, decryptBuffer, input.Length);
+                        }
+
+                        using (var aes2 = Aes.Create())
+                        {
+                            aes2.Padding = PaddingMode.None;
+                            aes2.Key = decryptedKey;
+                            aes2.IV = new byte[16];
+                            using (var aes2Decryptor = aes2.CreateDecryptor())
+                            {
+                                var tempResult = aes2Decryptor.TransformFinalBlock(decryptBuffer, 0, decryptBuffer.Length);
+                                if (paddingNeeded > 0)
+                                {
+                                    result = new byte[input.Length];
+                                    Array.Copy(tempResult, result, result.Length);
+                                }
+                                else
+                                {
+                                    result = tempResult;
+                                }
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        
+        private static bool TryProcessRawData(XexContext context, BinaryReader reader, byte[] data, out byte[] result)
+        {
+            result = Array.Empty<byte>();
+            try
+            {
+                var fileDataSize = Helpers.ConvertEndian(context.FileDataDescriptor.Size);
+                var fileDataCount = (fileDataSize - Helpers.SizeOf<XexRawDescriptor>()) / Helpers.SizeOf<XexRawDescriptor>();
+
+                var imageSize = Helpers.ConvertEndian(context.SecurityInfo.ImageSize);
+                var rawData = new byte[imageSize];
+
+                var rawOffset = 0;
+                var dataOffset = 0;
+                for (var i = 0; i < fileDataCount; i++)
+                {
+                    var rawDescriptor = Helpers.ByteToType<XexRawDescriptor>(reader);
+                    var rawDataSize = Helpers.ConvertEndian(rawDescriptor.DataSize);
+                    var rawZeroSize = Helpers.ConvertEndian(rawDescriptor.ZeroSize);
+                    if (rawDataSize > 0)
+                    {
+                        Array.Copy(data, dataOffset, rawData, rawOffset, (int)rawDataSize);
+                        dataOffset += (int)rawDataSize;
+                        rawOffset += (int)rawDataSize;
+                    }
+                    if (rawZeroSize > 0)
+                    {
+                        rawOffset += (int)rawZeroSize;
+                    }
+                }
+
+                result = rawData;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryDecompressData(XexContext context, BinaryReader reader, byte[] data, out byte[] result)
+        {
+            result = Array.Empty<byte>();
+            try
+            {
+                var compressedDescriptor = Helpers.ByteToType<XexCompressedDescriptor>(reader);
+                var windowSize = Helpers.ConvertEndian(compressedDescriptor.WindowSize);
+                var firstSize = Helpers.ConvertEndian(compressedDescriptor.Size);
+                var imageSize = Helpers.ConvertEndian(context.SecurityInfo.ImageSize);
+
+                if (XexUnpack.UnpackXexData(data, imageSize, windowSize, firstSize, out var unpacked) == false)
+                {
+                    return false;
+                }
+
+                result = unpacked;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private struct XexContext
+        {
+            public XexHeader Header;
+            public XexSecurityInfo SecurityInfo;
+            public XexExecution Execution;
+            public XexFileDataDescriptor FileDataDescriptor;
+        }
+
         public static bool TryExtractXexMetaData(byte[] xexData, out XexMetaData metaData)
         {
             metaData = new XexMetaData
@@ -129,6 +256,7 @@ namespace Xbox360Toolkit
 
             try
             {
+                XexContext xexContext = new XexContext();
 
                 using (var xexStream = new MemoryStream(xexData))
                 using (var xexReader = new BinaryReader(xexStream))
@@ -140,16 +268,16 @@ namespace Xbox360Toolkit
                         return false;
                     }
 
-                    var header = Helpers.ByteToType<XexHeader>(xexReader);
+                    xexContext.Header = Helpers.ByteToType<XexHeader>(xexReader);
 
-                    var magic = Helpers.GetUtf8String(header.Magic);
+                    var magic = Helpers.GetUtf8String(xexContext.Header.Magic);
                     if (magic.Equals("XEX2") == false)
                     {
                         System.Diagnostics.Debug.Print("Invalid XEX header magic.");
                         return false;
                     }
 
-                    var securityInfoPos = Helpers.ConvertEndian(header.SecurityInfo);
+                    var securityInfoPos = Helpers.ConvertEndian(xexContext.Header.SecurityInfo);
                     if (securityInfoPos > xexData.Length - Helpers.SizeOf<XexSecurityInfo>())
                     {
                         System.Diagnostics.Debug.Print("Invalid file length for XexSecurityInfo structure.");
@@ -158,9 +286,9 @@ namespace Xbox360Toolkit
 
                     xexReader.BaseStream.Position = securityInfoPos;
 
-                    var securityInfo = Helpers.ByteToType<XexSecurityInfo>(xexReader);
+                    xexContext.SecurityInfo = Helpers.ByteToType<XexSecurityInfo>(xexReader);
 
-                    var regions = Helpers.ConvertEndian(securityInfo.ImageInfo.GameRegion);
+                    var regions = Helpers.ConvertEndian(xexContext.SecurityInfo.ImageInfo.GameRegion);
                     if ((regions & 0x000000FF) == 0x000000FF)
                     {
                         metaData.GameRegion |= XexRegion.USA;
@@ -175,135 +303,103 @@ namespace Xbox360Toolkit
                     }
 
                     var xexExecutionSearchId = (XexExecutionId << 8) | (uint)(Helpers.SizeOf<XexExecution>() >> 2);
-                    if (SearchField<XexExecution>(xexReader, header, xexExecutionSearchId, out var xexExecution) == false)
+                    if (SearchField(xexReader, xexContext.Header, xexExecutionSearchId, out xexContext.Execution) == false)
                     {
                         System.Diagnostics.Debug.Print("Unable to find XexExecution structure.");
                         return false;
                     }
 
-                    metaData.TitleId = Helpers.ConvertEndian(xexExecution.TitleId);
-                    metaData.MediaId = Helpers.ConvertEndian(xexExecution.MediaId);
-                    metaData.Version = Helpers.ConvertEndian(xexExecution.Version);
-                    metaData.BaseVersion = Helpers.ConvertEndian(xexExecution.BaseVersion);
-                    metaData.DiscNum = xexExecution.DiscNum;
-                    metaData.DiscTotal = xexExecution.DiscTotal;
+                    metaData.TitleId = Helpers.ConvertEndian(xexContext.Execution.TitleId);
+                    metaData.MediaId = Helpers.ConvertEndian(xexContext.Execution.MediaId);
+                    metaData.Version = Helpers.ConvertEndian(xexContext.Execution.Version);
+                    metaData.BaseVersion = Helpers.ConvertEndian(xexContext.Execution.BaseVersion);
+                    metaData.DiscNum = xexContext.Execution.DiscNum;
+                    metaData.DiscTotal = xexContext.Execution.DiscTotal;
 
                     var xexFileDataDescriptorSearchId = (XexFileDataDescriptorId << 8) | 0xff;
-                    if (SearchField<XexFileDataDescriptor>(xexReader, header, xexFileDataDescriptorSearchId, out var xexFileDataDescriptor) == false)
+                    if (SearchField(xexReader, xexContext.Header, xexFileDataDescriptorSearchId, out xexContext.FileDataDescriptor) == false)
                     {
-                        System.Diagnostics.Debug.Print("Unable to find XexFileDataDescriptor structure.");
-                        return false;
+                        System.Diagnostics.Debug.Print("Skipping detailed xex info due to being unable to find XexFileDataDescriptor structure.");
+                        return true;
                     }
 
-                    var xexFileDataDescriptorPos = xexReader.BaseStream.Position;
-
-                    var dataPos = Helpers.ConvertEndian(header.SizeOfHeaders);
-                    var dataLen = xexData.Length - Helpers.ConvertEndian(header.SizeOfHeaders);
+                    var fileDataDescriptorPos = xexReader.BaseStream.Position;
+                    var dataPos = Helpers.ConvertEndian(xexContext.Header.SizeOfHeaders);
+                    var dataLen = xexData.Length - Helpers.ConvertEndian(xexContext.Header.SizeOfHeaders);
                     xexReader.BaseStream.Position = dataPos;
                     var data = xexReader.ReadBytes((int)dataLen);
 
-                    var imageSize = Helpers.ConvertEndian(securityInfo.ImageSize);
+                    var processed = false;
+                    var decryptionKeys = new byte[][] { XexRetailKey, XexDevkitKey };
 
-                    var flags = Helpers.ConvertEndian(xexFileDataDescriptor.Flags);
-                    if ((flags & XexDataFlagEncrypted) == XexDataFlagEncrypted)
+                    foreach (var decryptionKey in decryptionKeys)
                     {
-                        var imageFlasgs = Helpers.ConvertEndian(securityInfo.ImageInfo.ImageFlags);
-                        var sizeOfHeaders = Helpers.ConvertEndian(header.SizeOfHeaders);
-                        var xexKey = ((imageFlasgs & XexSecurityFlagMfgSupport) == XexSecurityFlagMfgSupport) ? Xex1Key : Xex2Key;
+                        xexReader.BaseStream.Position = fileDataDescriptorPos;
 
+                        var processedData = data;
 
-                        using (var aes1 = new AesCryptoServiceProvider())
+                        var flags = Helpers.ConvertEndian(xexContext.FileDataDescriptor.Flags);
+
+                        if ((flags & XexDataFlagEncrypted) == XexDataFlagEncrypted)
                         {
-                            aes1.Padding = PaddingMode.None;
-                            aes1.Key = xexKey;
-                            aes1.IV = new byte[16];
-                            using (var aes1Decryptor = aes1.CreateDecryptor())
+                            if (TryDecrypt(xexContext, decryptionKey, processedData, out processedData) == false)
                             {
-                                var decryptedKey = aes1Decryptor.TransformFinalBlock(securityInfo.ImageInfo.ImageKey, 0, securityInfo.ImageInfo.ImageKey.Length);
-                                if (decryptedKey == null)
-                                {
-                                    System.Diagnostics.Debug.Print("Failed to decrypt xex data.");
-                                    return false;
-                                }
-                                using (var aes2 = new AesCryptoServiceProvider())
-                                {
-                                    aes2.Padding = PaddingMode.None;
-                                    aes2.Key = decryptedKey;
-                                    aes2.IV = new byte[16];
-                                    using (var aes2Decryptor = aes2.CreateDecryptor())
-                                    {
-                                        data = aes2Decryptor.TransformFinalBlock(data, 0, data.Length);
-                                    }
-                                }
+                                continue;
                             }
                         }
-                    }
-
-                    var format = Helpers.ConvertEndian(xexFileDataDescriptor.Format);
-                    if (format == XexDataFormatRaw)
-                    {
-                        var fileDataSize = Helpers.ConvertEndian(xexFileDataDescriptor.Size);
-                        var fileDataCount = (fileDataSize - Helpers.SizeOf<XexRawDescriptor>()) / Helpers.SizeOf<XexRawDescriptor>();
-
-                        xexReader.BaseStream.Position = xexFileDataDescriptorPos;
-
-                        var rawData = new byte[imageSize];
-
-                        var rawOffset = 0;
-                        var dataOffset = 0;
-                        for (var i = 0; i < fileDataCount; i++)
+                        else
                         {
-                            var rawDescriptor = Helpers.ByteToType<XexRawDescriptor>(xexReader);
-                            var rawDataSize = Helpers.ConvertEndian(rawDescriptor.DataSize);
-                            var rawZeroSize = Helpers.ConvertEndian(rawDescriptor.ZeroSize);
-                            if (rawDataSize > 0)
-                            {
-                                Array.Copy(data, dataOffset, rawData, rawOffset, (int)rawDataSize);
-                                dataOffset += (int)rawDataSize;
-                                rawOffset += (int)rawDataSize;
-                            }
-                            if (rawZeroSize > 0)
-                            {
-                                rawOffset += (int)rawZeroSize;
-                            }
+                            processedData = data;
                         }
 
-                        data = rawData;
-
-                    }
-                    else if (format == XexDataFormatCompressed)
-                    {
-                        xexReader.BaseStream.Position = xexFileDataDescriptorPos;
-                        var compressedDescriptor = Helpers.ByteToType<XexCompressedDescriptor>(xexReader);
-
-                        uint windowSize = Helpers.ConvertEndian(compressedDescriptor.WindowSize);
-                        uint firstSize = Helpers.ConvertEndian(compressedDescriptor.Size);
-
-                        if (XexUnpack.UnpackXexData(data, imageSize, windowSize, firstSize, out var unpacked) == false)
+                        var format = Helpers.ConvertEndian(xexContext.FileDataDescriptor.Format);
+                        if (format == XexDataFormatRaw)
                         {
-                            System.Diagnostics.Debug.Print("Failed to extract xex data.");
+                            if (TryProcessRawData(xexContext, xexReader, processedData, out processedData) == false)
+                            {
+                                continue;
+                            }
+                        }
+                        else if (format == XexDataFormatCompressed)
+                        {
+                            if (TryDecompressData(xexContext, xexReader, processedData, out processedData) == false)
+                            {
+                                continue;
+                            }
+
+                        }
+                        else if (format == XexDataFormatDeltaCompressed)
+                        {
+                            System.Diagnostics.Debug.Print("Unsupported format 'XexDataFormatDeltaCompressed'.");
+                            return false;
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.Print($"Unrecognized format value {format}.");
                             return false;
                         }
 
-                        data = unpacked;
+                        processed = processedData[0] == 'M' && processedData[1] == 'Z';
+                        if (processed)
+                        {
+                            data = processedData;
+                            break;
+                        }
+                    }
 
-                    }
-                    else if (format == XexDataFormatDeltaCompressed)
+                    if (processed == false)
                     {
-                        System.Diagnostics.Debug.Print("Unsupported format 'XexDataFormatDeltaCompressed'.");
+                        System.Diagnostics.Debug.Print("Unable to process xex data.");
                         return false;
                     }
-                    else
-                    {
-                        System.Diagnostics.Debug.Print($"Unrecognized format value {format}.");
-                        return false;
-                    }
+
+                    xexReader.BaseStream.Position = fileDataDescriptorPos;
 
                     var headerSectionTableSearchId = (XexHeaderSectionTableId << 8) | 0xff;
-                    if (SearchField<XexHeaderSectionTable>(xexReader, header, headerSectionTableSearchId, out var headerSectionTable) == false)
+                    if (SearchField<XexHeaderSectionTable>(xexReader, xexContext.Header, headerSectionTableSearchId, out var headerSectionTable) == false)
                     {
-                        System.Diagnostics.Debug.Print("Unable to find XexFileDataDescriptor structure.");
-                        return false;
+                        System.Diagnostics.Debug.Print("Skipping detailed xex info due to being unable to find XexHeaderSectionTable structure.");
+                        return true;
                     }
 
                     var headerSectionSize = Helpers.ConvertEndian(headerSectionTable.Size);
@@ -312,7 +408,7 @@ namespace Xbox360Toolkit
                     {
                         var headerSectionEntry = Helpers.ByteToType<XexHeaderSectionEntry>(xexReader);
                         var headerSectionName = Helpers.GetUtf8String(headerSectionEntry.SectionName);
-                        var headerSearchTitle = $"{Helpers.ConvertEndian(xexExecution.TitleId):X}";
+                        var headerSearchTitle = $"{Helpers.ConvertEndian(xexContext.Execution.TitleId):X}";
                         if (headerSectionName.Equals(headerSearchTitle))
                         {
                             var virtualSize = Helpers.ConvertEndian(headerSectionEntry.VirtualSize);
@@ -322,7 +418,7 @@ namespace Xbox360Toolkit
                             using (var dataReader = new BinaryReader(dataStream))
                             {
 
-                                var xdbfPosition = virtualAddress - Helpers.ConvertEndian(securityInfo.ImageInfo.LoadAddress);
+                                var xdbfPosition = virtualAddress - Helpers.ConvertEndian(xexContext.SecurityInfo.ImageInfo.LoadAddress);
 
                                 dataStream.Position = xdbfPosition;
 
