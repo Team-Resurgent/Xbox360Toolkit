@@ -250,7 +250,7 @@ namespace Xbox360Toolkit
             public XexFileDataDescriptor FileDataDescriptor;
         }
 
-        public static bool TryExtractXexMetaData(byte[] xexData, out XexMetaData metaData)
+        public static bool TryExtractXexMetaData(byte[] xexData, out XexMetaData metaData, byte[]? checksumData = null)
         {
             metaData = new XexMetaData
             {
@@ -331,7 +331,11 @@ namespace Xbox360Toolkit
                     metaData.DiscNum = xexContext.Execution.DiscNum;
                     metaData.DiscTotal = xexContext.Execution.DiscTotal;
 
-                    if (TryCalculateChecksum(xexData, out var checksum) == true)
+                    if (checksumData != null)
+                    {
+                        metaData.Checksum = checksumData;
+                    }
+                    else if (TryCalculateChecksum(xexData, out var checksum) == true)
                     {
                         metaData.Checksum = checksum;
                     }
