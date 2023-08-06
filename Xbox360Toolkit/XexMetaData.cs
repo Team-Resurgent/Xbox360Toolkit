@@ -18,8 +18,6 @@ namespace Xbox360Toolkit
 
         public uint DiscTotal;
 
-        public byte[] Thumbnail;
-
         public string TitleName;
 
         public string Description;
@@ -30,14 +28,19 @@ namespace Xbox360Toolkit
 
         public string Genre;
 
+        public byte[] Thumbnail;
+
+        public byte[] Checksum;
+
         public XexMetaData()
         {
-            Thumbnail = Array.Empty<byte>();
             TitleName = string.Empty;
             Description = string.Empty;
             Publisher = string.Empty;
             Developer = string.Empty;
             Genre = string.Empty;
+            Thumbnail = Array.Empty<byte>();
+            Checksum = Array.Empty<byte>();
         }
     }
 }

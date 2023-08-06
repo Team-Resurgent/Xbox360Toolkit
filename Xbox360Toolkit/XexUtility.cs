@@ -226,6 +226,21 @@ namespace Xbox360Toolkit
                 return false;
             }
         }
+        public static bool TryCalculateChecksum(byte[] data, out byte[] hash)
+        {
+            hash = Array.Empty<byte>();
+            using (var sha = SHA256.Create())
+            {
+                sha.TransformFinalBlock(data, 0, data.Length);
+                var sha256Hash = sha.Hash;
+                if (sha256Hash == null)
+                {
+                    return false;
+                }
+                hash = sha256Hash;
+                return true;
+            }
+        }
 
         private struct XexContext
         {
@@ -315,6 +330,11 @@ namespace Xbox360Toolkit
                     metaData.BaseVersion = Helpers.ConvertEndian(xexContext.Execution.BaseVersion);
                     metaData.DiscNum = xexContext.Execution.DiscNum;
                     metaData.DiscTotal = xexContext.Execution.DiscTotal;
+
+                    if (TryCalculateChecksum(xexData, out var checksum) == true)
+                    {
+                        metaData.Checksum = checksum;
+                    }
 
                     var xexFileDataDescriptorSearchId = (XexFileDataDescriptorId << 8) | 0xff;
                     if (SearchField(xexReader, xexContext.Header, xexFileDataDescriptorSearchId, out xexContext.FileDataDescriptor) == false)
