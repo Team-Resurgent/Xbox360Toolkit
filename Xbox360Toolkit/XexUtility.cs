@@ -226,9 +226,9 @@ namespace Xbox360Toolkit
                 return false;
             }
         }
-        public static bool TryCalculateChecksum(byte[] data, out byte[] hash)
+        public static bool TryCalculateChecksum(byte[] data, out string hash)
         {
-            hash = Array.Empty<byte>();
+            hash = string.Empty;
             using (var sha = SHA256.Create())
             {
                 sha.TransformFinalBlock(data, 0, data.Length);
@@ -237,7 +237,7 @@ namespace Xbox360Toolkit
                 {
                     return false;
                 }
-                hash = sha256Hash;
+                hash = BitConverter.ToString(sha256Hash).Replace("-", string.Empty);
                 return true;
             }
         }
@@ -250,7 +250,7 @@ namespace Xbox360Toolkit
             public XexFileDataDescriptor FileDataDescriptor;
         }
 
-        public static bool TryExtractXexMetaData(byte[] xexData, out XexMetaData metaData, byte[]? checksumData = null)
+        public static bool TryExtractXexMetaData(byte[] xexData, out XexMetaData metaData, string? checksum = null)
         {
             metaData = new XexMetaData
             {
@@ -331,13 +331,13 @@ namespace Xbox360Toolkit
                     metaData.DiscNum = xexContext.Execution.DiscNum;
                     metaData.DiscTotal = xexContext.Execution.DiscTotal;
 
-                    if (checksumData != null)
-                    {
-                        metaData.Checksum = checksumData;
-                    }
-                    else if (TryCalculateChecksum(xexData, out var checksum) == true)
+                    if (checksum != null)
                     {
                         metaData.Checksum = checksum;
+                    }
+                    else if (TryCalculateChecksum(xexData, out var checksumValue) == true)
+                    {
+                        metaData.Checksum = checksumValue;
                     }
 
                     var xexFileDataDescriptorSearchId = (XexFileDataDescriptorId << 8) | 0xff;

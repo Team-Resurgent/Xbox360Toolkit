@@ -30,7 +30,7 @@ namespace Xbox360Toolkit
 
         public byte[] Thumbnail;
 
-        public byte[] Checksum;
+        public string Checksum;
 
         public XexMetaData()
         {
@@ -40,7 +40,7 @@ namespace Xbox360Toolkit
             Developer = string.Empty;
             Genre = string.Empty;
             Thumbnail = Array.Empty<byte>();
-            Checksum = Array.Empty<byte>();
+            Checksum = string.Empty;
         }
     }
 }
