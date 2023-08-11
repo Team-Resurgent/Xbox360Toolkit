@@ -8,6 +8,7 @@ using System.Xml.Linq;
 using System.Xml.XPath;
 using Xbox360Toolkit.Internal;
 using Xbox360Toolkit.Internal.Models;
+using Xbox360Toolkit.Models;
 
 namespace Xbox360Toolkit
 {

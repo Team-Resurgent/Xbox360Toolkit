@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Xbox360Toolkit
+namespace Xbox360Toolkit.Models
 {
     public class XexMetaData
     {
