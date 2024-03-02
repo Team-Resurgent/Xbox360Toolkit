@@ -1,27 +1,28 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Xbox360Toolkit.Interface;
+using Xbox360Toolkit.Internal.Models;
 
 namespace Xbox360Toolkit.Internal.Decoders
 {
     internal class ISOSectorDecoder : SectorDecoder
     {
-        private string mFilePath;
-        private FileStream mFileStream;
-        private object mMutex;
+        private readonly ISODetail[] mISODetails;
+        private readonly object mMutex;
         private bool mDisposed;
 
-        public ISOSectorDecoder(string filePath)
+        public ISOSectorDecoder(ISODetail[] isoDetails)
         {
-            mFilePath = filePath;
-            mFileStream = new FileStream(mFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            mISODetails = isoDetails;
             mMutex = new object();
             mDisposed = false;
         }
 
         public override uint TotalSectors()
         {
-            return (uint)(new FileInfo(mFilePath).Length / Constants.XGD_SECTOR_SIZE);
+            return (uint)(mISODetails.Max(s => s.EndSector) + 1);
         }
 
         public override bool TryReadSector(long sector, out byte[] sectorData)
@@ -29,9 +30,16 @@ namespace Xbox360Toolkit.Internal.Decoders
             sectorData = new byte[Constants.XGD_SECTOR_SIZE];
             lock (mMutex)
             {
-                mFileStream.Position = sector * Constants.XGD_SECTOR_SIZE;
-                var bytesRead = mFileStream.Read(sectorData, 0, (int)Constants.XGD_SECTOR_SIZE);
-                return bytesRead == Constants.XGD_SECTOR_SIZE;
+                foreach (var isoDetail in mISODetails)
+                {
+                    if (sector >= isoDetail.StartSector && sector <= isoDetail.EndSector)
+                    {
+                        isoDetail.Stream.Position = (sector - isoDetail.StartSector) * Constants.XGD_SECTOR_SIZE;
+                        var bytesRead = isoDetail.Stream.Read(sectorData, 0, (int)Constants.XGD_SECTOR_SIZE);
+                        return bytesRead == Constants.XGD_SECTOR_SIZE;
+                    }
+                }
+                return false;
             }
         }
 
@@ -47,7 +55,10 @@ namespace Xbox360Toolkit.Internal.Decoders
             {
                 if (disposing)
                 {
-                    mFileStream.Dispose();
+                    foreach (var isoDetail in mISODetails)
+                    {
+                        isoDetail.Stream.Dispose();
+                    }
                 }
                 mDisposed = true;
             }

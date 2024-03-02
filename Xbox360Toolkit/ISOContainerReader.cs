@@ -1,7 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using Xbox360Toolkit.Interface;
+using Xbox360Toolkit.Internal;
 using Xbox360Toolkit.Internal.Decoders;
+using Xbox360Toolkit.Internal.Models;
 
 namespace Xbox360Toolkit
 {
@@ -51,7 +54,26 @@ namespace Xbox360Toolkit
                     return false;
                 }
 
-                mSectorDecoder = new ISOSectorDecoder(mFilePath);
+                var fileSlices = ContainerUtility.GetSlicesFromFile(mFilePath);
+
+                var isoDetails = new List<ISODetail>();
+
+                var sectorCount = 0L;
+                foreach (var fileSlice in fileSlices)
+                {
+                    var stream = new FileStream(fileSlice, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    var sectors = stream.Length / Constants.XGD_SECTOR_SIZE;
+                    var isoDetail = new ISODetail()
+                    {
+                        Stream = stream,
+                        StartSector = sectorCount,
+                        EndSector = sectorCount + sectors - 1
+                    };
+                    isoDetails.Add(isoDetail);
+                    sectorCount += sectors;
+                }
+
+                mSectorDecoder = new ISOSectorDecoder(isoDetails.ToArray());
                 if (mSectorDecoder.Init() == false)
                 {
                     return false;

@@ -53,74 +53,88 @@ namespace Xbox360Toolkit
                     return false;
                 }
 
-                using (var fileStream = new FileStream(mFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                using (var binaryReader = new BinaryReader(fileStream))
+                var fileSlices = ContainerUtility.GetSlicesFromFile(mFilePath);
+
+                var cciDetails = new List<CCIDetail>();
+
+                var sectorCount = 0L;
+                foreach (var fileSlice in fileSlices)
                 {
-                    var header = binaryReader.ReadUInt32();
-                    if (header != 0x4D494343)
+
+                    using (var fileStream = new FileStream(fileSlice, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    using (var binaryReader = new BinaryReader(fileStream))
                     {
-                        throw new IOException("Invalid magic value in cci header.");
-                    }
-
-                    uint headerSize = binaryReader.ReadUInt32();
-                    if (headerSize != 32)
-                    {
-                        throw new IOException("Invalid header size in cci header.");
-                    }
-
-                    ulong uncompressedSize = binaryReader.ReadUInt64();
-
-                    ulong indexOffset = binaryReader.ReadUInt64();
-
-                    uint blockSize = binaryReader.ReadUInt32();
-                    if (blockSize != 2048)
-                    {
-                        throw new IOException("Invalid block size in cci header.");
-                    }
-
-                    byte version = binaryReader.ReadByte();
-                    if (version != 1)
-                    {
-                        throw new IOException("Invalid version in cci header.");
-                    }
-
-                    byte indexAlignment = binaryReader.ReadByte();
-                    if (indexAlignment != 2)
-                    {
-                        throw new IOException("Invalid index alignment in cci header.");
-                    }
-
-                    var entries = (int)(uncompressedSize / (ulong)blockSize);
-
-                    fileStream.Position = (long)indexOffset;
-
-                    var indexInfo = new List<CCIIndex>();
-                    for (var i = 0; i <= entries; i++)
-                    {
-                        var index = binaryReader.ReadUInt32();
-                        indexInfo.Add(new CCIIndex
+                        var header = binaryReader.ReadUInt32();
+                        if (header != 0x4D494343)
                         {
-                            Value = (ulong)(index & 0x7FFFFFFF) << indexAlignment,
-                            LZ4Compressed = (index & 0x80000000) > 0
-                        });
+                            throw new IOException("Invalid magic value in cci header.");
+                        }
+
+                        uint headerSize = binaryReader.ReadUInt32();
+                        if (headerSize != 32)
+                        {
+                            throw new IOException("Invalid header size in cci header.");
+                        }
+
+                        ulong uncompressedSize = binaryReader.ReadUInt64();
+
+                        ulong indexOffset = binaryReader.ReadUInt64();
+
+                        uint blockSize = binaryReader.ReadUInt32();
+                        if (blockSize != 2048)
+                        {
+                            throw new IOException("Invalid block size in cci header.");
+                        }
+
+                        byte version = binaryReader.ReadByte();
+                        if (version != 1)
+                        {
+                            throw new IOException("Invalid version in cci header.");
+                        }
+
+                        byte indexAlignment = binaryReader.ReadByte();
+                        if (indexAlignment != 2)
+                        {
+                            throw new IOException("Invalid index alignment in cci header.");
+                        }
+
+                        var sectors = (int)(uncompressedSize / blockSize);
+                        var entries = sectors + 1;
+
+                        fileStream.Position = (long)indexOffset;
+
+                        var indexInfo = new List<CCIIndex>();
+                        for (var i = 0; i < entries; i++)
+                        {
+                            var index = binaryReader.ReadUInt32();
+                            var position = (ulong)(index & 0x7FFFFFFF) << indexAlignment;
+                            indexInfo.Add(new CCIIndex
+                            {
+                                Value = position,
+                                LZ4Compressed = (index & 0x80000000) > 0
+                            });
+                        }
+
+                        var cciDetail = new CCIDetail
+                        {
+                            Stream = new FileStream(fileSlice, FileMode.Open, FileAccess.Read, FileShare.Read),
+                            IndexInfo = indexInfo.ToArray(),
+                            StartSector = sectorCount,
+                            EndSector = sectorCount + sectors - 1
+                        };
+                        cciDetails.Add(cciDetail);
+                        sectorCount += sectors;
                     }
-
-                    var cciDetails = new CCIDetails
-                    {
-                        FilePath = mFilePath,
-                        IndexInfo = indexInfo.ToArray()
-                    };
-
-                    mSectorDecoder = new CCISectorDecoder(cciDetails);
-                    if (mSectorDecoder.Init() == false)
-                    {
-                        return false;
-                    }
-
-                    mMountCount++;
-                    return true;
-
                 }
+
+                mSectorDecoder = new CCISectorDecoder(cciDetails.ToArray());
+                if (mSectorDecoder.Init() == false)
+                {
+                    return false;
+                }
+
+                mMountCount++;
+                return true;
             }
             catch (Exception ex)
             {

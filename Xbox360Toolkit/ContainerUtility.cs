@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using Xbox360Toolkit.Interface;
 using Xbox360Toolkit.Internal;
 using Xbox360Toolkit.Internal.Models;
@@ -30,6 +28,20 @@ namespace Xbox360Toolkit
 
         //    return true;
         //}
+
+        public static string[] GetSlicesFromFile(string filename)
+        {
+            var slices = new List<string>();
+            var extension = Path.GetExtension(filename);
+            var fileWithoutExtension = Path.GetFileNameWithoutExtension(filename);
+            var subExtension = Path.GetExtension(fileWithoutExtension);
+            if (subExtension?.Length == 2 && char.IsNumber(subExtension[1]))
+            {
+                var fileWithoutSubExtension = Path.GetFileNameWithoutExtension(fileWithoutExtension);
+                return Directory.GetFiles(Path.GetDirectoryName(filename), $"{fileWithoutSubExtension}.?{extension}").OrderBy(s => s).ToArray();
+            }
+            return new string[] { filename };
+        }
 
         public static bool TryAutoDetectContainerType(string filePath, out ContainerReader? containerReader)
         {
@@ -68,7 +80,7 @@ namespace Xbox360Toolkit
             return true;
         }
 
-        public static bool ConvertContainerToISO(ContainerReader containerReader, ProcessingOptions processingOptions, string outputFile, Action<float>? progress)
+        public static bool ConvertContainerToISO(ContainerReader containerReader, ProcessingOptions processingOptions, string outputFile, long splitPoint, Action<float>? progress)
         {
             var progressPercent = 0.0f;
             progress?.Invoke(progressPercent);
@@ -107,36 +119,64 @@ namespace Xbox360Toolkit
 
             var totalSectors = processingOptions.HasFlag(ProcessingOptions.TrimSectors) == true ? Math.Min(Helpers.RoundToMultiple(dataSectors.Max() + 1, 2), decoder.TotalSectors()) : decoder.TotalSectors();
 
-            using (var outputStream = new FileStream(outputFile, FileMode.Create, FileAccess.Write))
-            using (var outputWriter = new BinaryWriter(outputStream))
-            {
-                for (var i = startSector; i < totalSectors; i++)
-                {
-                    var sectorToWrite = scrubbedSector;
-                    var writeSector = (processingOptions.HasFlag(ProcessingOptions.ScrubSectors) == false) || dataSectors.Contains(i);
-                    if (writeSector == true)
-                    {
-                        if (decoder.TryReadSector(i, out sectorToWrite) == false)
-                        {
-                            return false;
-                        }
-                    }
-                    outputStream.Write(sectorToWrite, 0, sectorToWrite.Length);
+            var currentSector = startSector;
+            var iteration = 0;
 
-                    var currentProgressPercent = (float)Math.Round((i - startSector) / (float)totalSectors, 4);
-                    if (Helpers.IsEqualTo(currentProgressPercent, progressPercent) == false)
+            while (currentSector < totalSectors)
+            {
+                var splitting = false;
+                using (var outputStream = new FileStream(outputFile, FileMode.Create, FileAccess.Write))
+                using (var outputWriter = new BinaryWriter(outputStream))
+                {
+                    while (currentSector < totalSectors)
                     {
-                        progress?.Invoke(currentProgressPercent);
-                        Interlocked.Exchange(ref progressPercent, currentProgressPercent);
+                        var estimatedSize = outputStream.Position + 2048;
+                        if (splitPoint > 0 && estimatedSize > splitPoint)
+                        {
+                            splitting = true;
+                            break;
+                        }
+
+                        var sectorToWrite = scrubbedSector;
+                        var writeSector = (processingOptions.HasFlag(ProcessingOptions.ScrubSectors) == false) || dataSectors.Contains(currentSector);
+                        if (writeSector == true)
+                        {
+                            if (decoder.TryReadSector(currentSector, out sectorToWrite) == false)
+                            {
+                                return false;
+                            }
+                        }
+                        outputStream.Write(sectorToWrite, 0, sectorToWrite.Length);
+
+                        var currentProgressPercent = (float)Math.Round((currentSector - startSector) / (float)totalSectors, 4);
+                        if (Helpers.IsEqualTo(currentProgressPercent, progressPercent) == false)
+                        {
+                            progress?.Invoke(currentProgressPercent);
+                            Interlocked.Exchange(ref progressPercent, currentProgressPercent);
+                        }
+
+                        currentSector++;
                     }
                 }
+
+                if (splitting || iteration > 0)
+                {
+                    var destFile = Path.Combine(Path.GetDirectoryName(outputFile), Path.GetFileNameWithoutExtension(outputFile) + $".{iteration + 1}{Path.GetExtension(outputFile)}");
+                    if (File.Exists(destFile))
+                    {
+                        File.Delete(destFile);
+                    }
+                    File.Move(outputFile, destFile);
+                }
+
+                iteration++;
             }
 
             progress?.Invoke(1);
             return true;
         }
 
-        public static bool ConvertContainerToCCI(ContainerReader containerReader, ProcessingOptions processingOptions, string outputFile, Action<float>? progress)
+        public static bool ConvertContainerToCCI(ContainerReader containerReader, ProcessingOptions processingOptions, string outputFile, long splitPoint, Action<float>? progress)
         {
             var progressPercent = 0.0f;
             progress?.Invoke(progressPercent);
@@ -175,117 +215,125 @@ namespace Xbox360Toolkit
 
             var totalSectors = processingOptions.HasFlag(ProcessingOptions.TrimSectors) == true ? Math.Min(Helpers.RoundToMultiple(dataSectors.Max() + 1, 2), decoder.TotalSectors()) : decoder.TotalSectors();
 
-            using (var outputStream = new FileStream(outputFile, FileMode.Create, FileAccess.Write))
-            using (var outputWriter = new BinaryWriter(outputStream))
+            var compressedData = new byte[2048];
+            var currentSector = startSector;
+            var iteration = 0;
+
+            while (currentSector < totalSectors)
             {
-                var indexInfo = new CCIIndex[totalSectors - startSector];
+                var cciIndices = new List<CCIIndex>();
 
-                var header = (uint)0x4D494343;
-                outputWriter.Write(header);
-
-                var headerSize = (uint)32;
-                outputWriter.Write(headerSize);
-
-                var uncompressedSize = (long)0;
-                outputWriter.Write(uncompressedSize);
-
-                var indexOffset = (ulong)0;
-                outputWriter.Write(indexOffset);
-
-                var blockSize = (uint)Constants.XGD_SECTOR_SIZE;
-                outputWriter.Write(blockSize);
-
-                var version = (byte)1;
-                outputWriter.Write(version);
-
-                var indexAlignment = (byte)2;
-                outputWriter.Write(indexAlignment);
-
-                var unused = (ushort)0;
-                outputWriter.Write(unused);
-
-                var batchSize = (Environment.ProcessorCount / 2) + 1;
-                var options = new ParallelOptions { MaxDegreeOfParallelism = batchSize };
-
-                for (var i = startSector; i < totalSectors; i += (uint)batchSize)
+                var splitting = false;
+                using (var outputStream = new FileStream(outputFile, FileMode.Create, FileAccess.Write))
+                using (var outputWriter = new BinaryWriter(outputStream))
                 {
-                    var batchSectors = Math.Min(totalSectors - i, batchSize);
-                    var batch = new CCIBatch[batchSectors];
+                    uint header = 0x4D494343U;
+                    outputWriter.Write(header);
 
-                    Parallel.For(0, batchSectors, batchIndex =>
+                    uint headerSize = 32;
+                    outputWriter.Write(headerSize);
+
+                    ulong uncompressedSize = 0UL;
+                    outputWriter.Write(uncompressedSize);
+
+                    ulong indexOffset = 0UL;
+                    outputWriter.Write(indexOffset);
+
+                    uint blockSize = 2048;
+                    outputWriter.Write(blockSize);
+
+                    byte version = 1;
+                    outputWriter.Write(version);
+
+                    byte indexAlignment = 2;
+                    outputWriter.Write(indexAlignment);
+
+                    ushort unused = 0;
+                    outputWriter.Write(unused);
+
+                    while (currentSector < totalSectors)
                     {
-                        var batchSector = (uint)(i + batchIndex);
-
                         var sectorToWrite = scrubbedSector;
-                        var writeSector = (processingOptions.HasFlag(ProcessingOptions.ScrubSectors) == false) || dataSectors.Contains(batchSector);
+                        var writeSector = (processingOptions.HasFlag(ProcessingOptions.ScrubSectors) == false) || dataSectors.Contains(currentSector);
                         if (writeSector == true)
                         {
-                            if (decoder.TryReadSector(batchSector, out sectorToWrite) == false)
+                            if (decoder.TryReadSector(currentSector, out sectorToWrite) == false)
                             {
-                                batch[batchIndex].Failed = true;
-                                return;
+                                return false;
                             }
                         }
 
-                        var compressedData = new byte[Constants.XGD_SECTOR_SIZE];
-                        var multiple = (1 << indexAlignment);
-                        var compressedSize = K4os.Compression.LZ4.LZ4Codec.Encode(sectorToWrite, compressedData, K4os.Compression.LZ4.LZ4Level.L12_MAX);
-                        if (compressedSize > 0 && compressedSize < (Constants.XGD_SECTOR_SIZE - (2 * multiple)))
+                        using (var memoryStream = new MemoryStream())
                         {
-                            var padding = Helpers.RoundToMultiple((uint)compressedSize + 1, (uint)multiple) - (compressedSize + 1);
+                            var compressed = false;
+                            var compressedSize = K4os.Compression.LZ4.LZ4Codec.Encode(sectorToWrite, compressedData, K4os.Compression.LZ4.LZ4Level.L12_MAX);
+                            if (compressedSize > 0 && compressedSize < (2048 - (4 + (1 << indexAlignment))))
+                            {
+                                var multiple = (1 << indexAlignment);
+                                var padding = ((compressedSize + 1 + multiple - 1) / multiple * multiple) - (compressedSize + 1);
 
-                            var sectorData = new byte[compressedSize + 1 + padding];
-                            sectorData[0] = (byte)padding;
-                            Array.Copy(compressedData, 0, sectorData, 1, compressedSize);
+                                memoryStream.WriteByte((byte)padding);
+                                memoryStream.Write(compressedData, 0, compressedSize);
+                                if (padding != 0)
+                                {
+                                    memoryStream.Write(new byte[padding], 0, padding);
+                                }
+                                compressed = true;
+                            }
+                            else
+                            {
+                                memoryStream.Write(sectorToWrite, 0, sectorToWrite.Length);
+                            }
 
-                            batch[batchIndex].Failed = false;
-                            batch[batchIndex].Buffer = sectorData;
-                            batch[batchIndex].Index = new CCIIndex { Value = (ulong)sectorData.Length, LZ4Compressed = true };
+                            var currentIndexSize = cciIndices.Count * 8;
+                            var estimatedSize = outputStream.Position + currentIndexSize + memoryStream.Length;
+                            if (splitPoint > 0 && estimatedSize > splitPoint)
+                            {
+                                splitting = true;
+                                break;
+                            }
+
+                            outputWriter.Write(memoryStream.ToArray(), 0, (int)memoryStream.Length);
+                            cciIndices.Add(new CCIIndex { Value = (ulong)memoryStream.Length, LZ4Compressed = compressed });
                         }
-                        else
+
+                        uncompressedSize += 2048;
+                        currentSector++;
+                       
+                        if (progress != null)
                         {
-                            batch[batchIndex].Failed = false;
-                            batch[batchIndex].Buffer = sectorToWrite;
-                            batch[batchIndex].Index = new CCIIndex { Value = (ulong)sectorToWrite.Length, LZ4Compressed = false };
+                            progress((currentSector - startSector) / (float)(totalSectors - startSector));
                         }
-
-                        Interlocked.Add(ref uncompressedSize, Constants.XGD_SECTOR_SIZE);
-
-                        var currentProgressPercent = (float)Math.Round(batchSector / (float)totalSectors, 4);
-                        if (Helpers.IsEqualTo(currentProgressPercent, progressPercent) == false)
-                        {
-                            progress?.Invoke(currentProgressPercent);
-                            Interlocked.Exchange(ref progressPercent, currentProgressPercent);
-                        }
-                    });
-
-                    for (var batchIndex = 0; batchIndex < batchSectors; batchIndex++)
-                    {
-                        var batchItem = batch[batchIndex];
-                        if (batchItem.Failed == true)
-                        {
-                            return false;
-                        }
-                        outputWriter.Write(batchItem.Buffer);
-                        indexInfo[(i - startSector) + batchIndex] = batchItem.Index;
                     }
+
+                    indexOffset = (ulong)outputStream.Position;
+
+                    var position = (ulong)headerSize;
+                    for (var i = 0; i < cciIndices.Count; i++)
+                    {
+                        var index = (uint)(position >> indexAlignment) | (cciIndices[i].LZ4Compressed ? 0x80000000U : 0U);
+                        outputWriter.Write(index); 
+                        position += cciIndices[i].Value;
+                    }
+                    var indexEnd = (uint)(position >> indexAlignment);
+                    outputWriter.Write(indexEnd);
+
+                    outputStream.Position = 8;
+                    outputWriter.Write(uncompressedSize);
+                    outputWriter.Write(indexOffset);
                 }
 
-                indexOffset = (ulong)outputStream.Position;
-
-                var position = (ulong)headerSize;
-                for (var i = 0; i < indexInfo.Length; i++)
+                if (splitting || iteration > 0)
                 {
-                    var index = (uint)(position >> indexAlignment) | (indexInfo[i].LZ4Compressed ? 0x80000000U : 0U);
-                    outputWriter.Write(index);
-                    position += indexInfo[i].Value;
+                    var destFile = Path.Combine(Path.GetDirectoryName(outputFile), Path.GetFileNameWithoutExtension(outputFile) + $".{iteration + 1}{Path.GetExtension(outputFile)}");
+                    if (File.Exists(destFile))
+                    {
+                        File.Delete(destFile);
+                    }
+                    File.Move(outputFile, destFile);
                 }
-                var indexEnd = (uint)(position >> indexAlignment);
-                outputWriter.Write(indexEnd);
 
-                outputStream.Position = 8;
-                outputWriter.Write(uncompressedSize);
-                outputWriter.Write(indexOffset);
+                iteration++;
             }
 
             progress?.Invoke(1);
