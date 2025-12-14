@@ -86,5 +86,21 @@ namespace Xbox360Toolkit.Internal
         {
             return Math.Abs(a - b) < 0.001;
         }
+
+        public static void FillArray<T>(T[] array, T value)
+        {
+            for (var i = 0; i < array.Length; i++)
+            {
+                array[i] = value;
+            }
+        }
+
+        public static void FillArray<T>(T[] array, T value, int startIndex, int count)
+        {
+            for (var i = startIndex; i < startIndex + count && i < array.Length; i++)
+            {
+                array[i] = value;
+            }
+        }
     }
 }
