@@ -8,15 +8,15 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<Description>A Xbox 360 toolkit library.</Description>
-		<AssemblyVersion>1.0.26</AssemblyVersion>
+		<Description>A Xbox toolkit library.</Description>
+		<AssemblyVersion>1.1.0</AssemblyVersion>
 		<Authors>EqUiNoX</Authors>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<AssemblyName>XboxToolkit</AssemblyName>
 		<PackageId>XboxToolkit</PackageId>
 		<PackagePrereleaseIdentifier></PackagePrereleaseIdentifier>
 		<PackageVersion>$(AssemblyVersion)$(PackagePrereleaseIdentifier)</PackageVersion>
-		<PackageTags>Xbox 360 toolkit library</PackageTags>
+		<PackageTags>Xbox toolkit library</PackageTags>
 		<PackageProjectUrl>https://github.com/Team-Resurgent/XexUnpack</PackageProjectUrl>
 		<RootNamespace>XboxToolkit</RootNamespace>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
