@@ -237,6 +237,13 @@ namespace XboxToolkitTest
 
         static void Main()
         {
+            // Test directory structure first
+            DirectoryStructureTest.TestDirectoryStructure();
+            Console.WriteLine();
+            Console.WriteLine("Press any key to continue to ISO test...");
+            Console.ReadKey();
+            Console.WriteLine();
+            
             TestFolderToISO();
         }
 

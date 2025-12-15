@@ -21,8 +21,8 @@ namespace XboxToolkit.Interface
 
         public bool TryExtractFiles(string destFilePath)
         {
-            //try
-            //{
+            try
+            {
                 Directory.CreateDirectory(destFilePath);
 
                 var decoder = GetDecoder();
@@ -153,12 +153,12 @@ namespace XboxToolkit.Interface
                     }
                 }
                 return true;
-            //}
-            //catch (Exception ex)
-            //{
-            //    System.Diagnostics.Debug.Print(ex.ToString());
-            //    return false;
-            //}
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.Print(ex.ToString());
+                return false;
+            }
         }
 
         public bool TryGetDataSectors(out HashSet<uint> dataSectors)

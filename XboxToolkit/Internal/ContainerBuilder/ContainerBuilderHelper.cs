@@ -83,26 +83,35 @@ namespace XboxToolkit.Internal.ContainerBuilder
             uint totalSize = 0;
 
             // Calculate size needed for all entries in this directory
+            // Only count entries with non-empty names (matching BuildDirectoryData logic)
             var entries = new List<(bool isDir, string name, uint size)>();
             
             foreach (var file in directory.Files)
             {
                 var fileName = Path.GetFileName(file.RelativePath);
-                entries.Add((false, fileName, file.Size));
+                if (!string.IsNullOrEmpty(fileName))
+                {
+                    entries.Add((false, fileName, file.Size));
+                }
             }
 
             foreach (var subdir in directory.Subdirectories)
             {
                 CalculateDirectorySizes(subdir, directorySizes, sectorSize);
                 var dirName = Path.GetFileName(subdir.Path);
-                entries.Add((true, dirName, directorySizes[subdir.Path]));
+                if (!string.IsNullOrEmpty(dirName))
+                {
+                    entries.Add((true, dirName, directorySizes[subdir.Path]));
+                }
             }
 
             // Each entry is: left(2) + right(2) + sector(4) + size(4) + attribute(1) + nameLength(1) + filename
+            // Entries must be 4-byte aligned (padded to 4-byte boundary)
             foreach (var entry in entries)
             {
                 var nameBytes = Encoding.ASCII.GetBytes(entry.name);
-                var entrySize = 2 + 2 + 4 + 4 + 1 + 1 + (uint)nameBytes.Length;
+                var entryDataSize = 2 + 2 + 4 + 4 + 1 + 1 + (uint)nameBytes.Length;
+                var entrySize = (entryDataSize + 3) & ~3u; // Round up to 4-byte boundary
                 totalSize += entrySize;
             }
 
@@ -153,6 +162,11 @@ namespace XboxToolkit.Internal.ContainerBuilder
             foreach (var file in directory.Files)
             {
                 var fileName = Path.GetFileName(file.RelativePath);
+                if (string.IsNullOrEmpty(fileName))
+                {
+                    // Skip files with empty names
+                    continue;
+                }
                 entries.Add((false, fileName, file.Sector, file.Size, string.Empty));
             }
 
@@ -160,6 +174,11 @@ namespace XboxToolkit.Internal.ContainerBuilder
             {
                 BuildDirectoryData(subdir, fileEntries, directorySizes, directoryData, baseSector);
                 var dirName = Path.GetFileName(subdir.Path);
+                if (string.IsNullOrEmpty(dirName))
+                {
+                    // Skip directories with empty names
+                    continue;
+                }
                 entries.Add((true, dirName, subdir.Sector, directorySizes[subdir.Path], subdir.Path));
             }
 
@@ -169,9 +188,17 @@ namespace XboxToolkit.Internal.ContainerBuilder
             // Build binary tree structure
             var dirSize = directorySizes[directory.Path];
             var dirData = new byte[dirSize];
+            // Initialize to zeros to ensure uninitialized data doesn't cause issues
+            for (int i = 0; i < dirData.Length; i++)
+            {
+                dirData[i] = 0;
+            }
             var offset = 0u;
 
-            BuildBinaryTree(entries, dirData, ref offset, 0, entries.Count - 1, baseSector);
+            if (entries.Count > 0)
+            {
+                BuildBinaryTree(entries, dirData, ref offset, 0, entries.Count - 1, baseSector);
+            }
 
             directoryData[directory.Path] = dirData;
         }
@@ -187,28 +214,44 @@ namespace XboxToolkit.Internal.ContainerBuilder
             var mid = (start + end) / 2;
             var entry = entries[mid];
 
-            offset += (uint)(2 + 2 + 4 + 4 + 1 + 1 + entry.name.Length);
+            // Calculate entry size (must be 4-byte aligned for Xbox format)
+            var entryDataSize = (uint)(2 + 2 + 4 + 4 + 1 + 1 + entry.name.Length);
+            var entrySize = (entryDataSize + 3) & ~3u; // Round up to 4-byte boundary
+            
+            // Ensure name is not empty
+            if (string.IsNullOrEmpty(entry.name))
+            {
+                throw new InvalidOperationException($"Directory entry has empty name at offset {currentOffset}");
+            }
+            
+            var nameBytes = Encoding.ASCII.GetBytes(entry.name);
+            if (nameBytes.Length == 0 || nameBytes.Length > 255)
+            {
+                throw new InvalidOperationException($"Directory entry name has invalid length: {nameBytes.Length}");
+            }
+            
+            // Advance offset past this entry (reserve space, already aligned)
+            offset += entrySize;
 
-            // Calculate left and right child offsets
+            // Calculate where children will be written (offsets are in 4-byte units)
             ushort leftOffset = 0xFFFF;
             ushort rightOffset = 0xFFFF;
 
             if (start < mid)
             {
-                var leftStartOffset = offset;
+                // Left child will be written at current offset (already 4-byte aligned)
+                leftOffset = (ushort)(offset / 4);
                 BuildBinaryTree(entries, dirData, ref offset, start, mid - 1, baseSector);
-                leftOffset = (ushort)(leftStartOffset / 4);
             }
 
             if (mid < end)
             {
-                var rightStartOffset = offset;
+                // Right child will be written at current offset (after left subtree, already aligned)
+                rightOffset = (ushort)(offset / 4);
                 BuildBinaryTree(entries, dirData, ref offset, mid + 1, end, baseSector);
-                rightOffset = (ushort)(rightStartOffset / 4);
             }
 
-            // Write entry at currentOffset
-            var nameBytes = Encoding.ASCII.GetBytes(entry.name);
+            // Write entry at currentOffset (after children, so offsets are correct)
             using (var stream = new MemoryStream(dirData))
             using (var writer = new BinaryWriter(stream))
             {
@@ -220,6 +263,13 @@ namespace XboxToolkit.Internal.ContainerBuilder
                 writer.Write((byte)(entry.isDir ? 0x10 : 0x00));
                 writer.Write((byte)nameBytes.Length);
                 writer.Write(nameBytes);
+                
+                // Pad to 4-byte boundary
+                var padding = entrySize - entryDataSize;
+                if (padding > 0)
+                {
+                    writer.Write(new byte[padding]);
+                }
             }
         }
 
