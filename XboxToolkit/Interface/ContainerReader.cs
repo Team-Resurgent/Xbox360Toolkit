@@ -104,12 +104,8 @@ namespace XboxToolkit.Interface
                             }
                         }
 
-                        if (left == 0xFFFF)
-                        {
-                            continue;
-                        }
-
-                        if (left != 0)
+                        // Process left child in binary tree (if exists)
+                        if (left != 0 && left != 0xFFFF)
                         {
                             treeNodes.Add(new TreeNodeInfo
                             {
@@ -119,7 +115,10 @@ namespace XboxToolkit.Interface
                             });
                         }
 
-                        if (size > 0 && (attribute & 0x10) != 0)
+                        // If this is a directory entry, read its directory data and add to treeNodes for traversal
+                        // This must happen even if left == 0xFFFF, because left/right are for binary tree structure,
+                        // not for indicating whether this directory has subdirectories
+                        if ((attribute & 0x10) != 0 && size > 0)
                         {
                             var directorySectors = size / Constants.XGD_SECTOR_SIZE;
                             var directoryData = new byte[size];
@@ -141,7 +140,8 @@ namespace XboxToolkit.Interface
                             });
                         }
 
-                        if (right != 0)
+                        // Process right child in binary tree (if exists)
+                        if (right != 0 && right != 0xFFFF)
                         {
                             treeNodes.Add(new TreeNodeInfo
                             {

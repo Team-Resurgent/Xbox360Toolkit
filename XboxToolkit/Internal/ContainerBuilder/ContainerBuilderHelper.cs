@@ -55,8 +55,10 @@ namespace XboxToolkit.Internal.ContainerBuilder
                 var fileDir = Path.GetDirectoryName(f.RelativePath)?.Replace('\\', '/') ?? string.Empty;
                 if (string.IsNullOrEmpty(rootPath))
                 {
+                    // Root directory: files with no directory or "." directory
                     return string.IsNullOrEmpty(fileDir) || fileDir == ".";
                 }
+                // Non-root: files whose directory matches rootPath
                 return fileDir == rootPath;
             }).ToList();
 
@@ -64,12 +66,16 @@ namespace XboxToolkit.Internal.ContainerBuilder
             root.Subdirectories = directoryEntries
                 .Where(d => 
                 {
-                    if (d.Path == rootPath) return false;
+                    if (d.Path == rootPath) return false; // Skip self
+                    
                     var parentPath = Path.GetDirectoryName(d.Path)?.Replace('\\', '/') ?? string.Empty;
                     if (string.IsNullOrEmpty(rootPath))
                     {
+                        // Root directory: subdirectories that are direct children (no '/' in path)
+                        // This means the path itself is just the directory name, e.g. "subdir" not "subdir/nested"
                         return !d.Path.Contains('/');
                     }
+                    // Non-root: subdirectories whose parent matches rootPath
                     return parentPath == rootPath;
                 })
                 .Select(d => BuildDirectoryTree(directoryEntries, fileEntries, d.Path))
@@ -172,13 +178,18 @@ namespace XboxToolkit.Internal.ContainerBuilder
 
             foreach (var subdir in directory.Subdirectories)
             {
+                // Recursively build subdirectory data first
                 BuildDirectoryData(subdir, fileEntries, directorySizes, directoryData, baseSector);
+                
                 var dirName = Path.GetFileName(subdir.Path);
                 if (string.IsNullOrEmpty(dirName))
                 {
                     // Skip directories with empty names
                     continue;
                 }
+                
+                // Add subdirectory to entries - even if it's empty, it should still be in the parent's entry list
+                // Empty directories will have size = sector size (minimum), and their directory data will be all zeros
                 entries.Add((true, dirName, subdir.Sector, directorySizes[subdir.Path], subdir.Path));
             }
 
@@ -195,10 +206,12 @@ namespace XboxToolkit.Internal.ContainerBuilder
             }
             var offset = 0u;
 
+            // Build binary tree even if entries is empty (will result in all zeros, which is correct for empty directories)
             if (entries.Count > 0)
             {
                 BuildBinaryTree(entries, dirData, ref offset, 0, entries.Count - 1, baseSector);
             }
+            // If entries.Count == 0, dirData remains all zeros, which is correct for an empty directory
 
             directoryData[directory.Path] = dirData;
         }

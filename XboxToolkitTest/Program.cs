@@ -237,12 +237,12 @@ namespace XboxToolkitTest
 
         static void Main()
         {
-            // Test directory structure first
-            DirectoryStructureTest.TestDirectoryStructure();
-            Console.WriteLine();
-            Console.WriteLine("Press any key to continue to ISO test...");
-            Console.ReadKey();
-            Console.WriteLine();
+            // Skip directory structure test for now
+            // DirectoryStructureTest.TestDirectoryStructure();
+            // Console.WriteLine();
+            // Console.WriteLine("Press any key to continue to ISO test...");
+            // Console.ReadKey();
+            // Console.WriteLine();
             
             TestFolderToISO();
         }
@@ -268,8 +268,28 @@ namespace XboxToolkitTest
 
             // Get file info before creating ISO
             var sourceFilesInfo = Directory.GetFiles(sourceFolder, "*", SearchOption.AllDirectories);
+            var sourceDirsInfo = Directory.GetDirectories(sourceFolder, "*", SearchOption.AllDirectories);
             var totalSourceSize = sourceFilesInfo.Sum(f => new FileInfo(f).Length);
-            Console.WriteLine($"Source folder contains {sourceFilesInfo.Length} files, total size: {totalSourceSize / 1024.0 / 1024.0:F2} MB");
+            Console.WriteLine($"Source folder contains:");
+            Console.WriteLine($"  {sourceFilesInfo.Length} files");
+            Console.WriteLine($"  {sourceDirsInfo.Length} directories");
+            Console.WriteLine($"  Total size: {totalSourceSize / 1024.0 / 1024.0:F2} MB");
+            Console.WriteLine();
+            
+            // List all files and directories for debugging
+            Console.WriteLine("Source files:");
+            foreach (var file in sourceFilesInfo.OrderBy(f => f))
+            {
+                var relPath = Path.GetRelativePath(sourceFolder, file).Replace('\\', '/');
+                Console.WriteLine($"  {relPath}");
+            }
+            Console.WriteLine();
+            Console.WriteLine("Source directories:");
+            foreach (var dir in sourceDirsInfo.OrderBy(d => d))
+            {
+                var relPath = Path.GetRelativePath(sourceFolder, dir).Replace('\\', '/');
+                Console.WriteLine($"  {relPath}/");
+            }
             Console.WriteLine();
 
             var createSuccess = ContainerUtility.ConvertFolderToISO(
@@ -316,6 +336,28 @@ namespace XboxToolkitTest
             }
 
             Console.WriteLine($"SUCCESS: Files extracted to: {extractOutputPath}");
+            Console.WriteLine();
+            
+            // List extracted files for debugging
+            var extractedFilesInfo = Directory.GetFiles(extractOutputPath, "*", SearchOption.AllDirectories);
+            var extractedDirsInfo = Directory.GetDirectories(extractOutputPath, "*", SearchOption.AllDirectories);
+            Console.WriteLine($"Extracted folder contains:");
+            Console.WriteLine($"  {extractedFilesInfo.Length} files");
+            Console.WriteLine($"  {extractedDirsInfo.Length} directories");
+            Console.WriteLine();
+            Console.WriteLine("Extracted files:");
+            foreach (var file in extractedFilesInfo.OrderBy(f => f))
+            {
+                var relPath = Path.GetRelativePath(extractOutputPath, file).Replace('\\', '/');
+                Console.WriteLine($"  {relPath}");
+            }
+            Console.WriteLine();
+            Console.WriteLine("Extracted directories:");
+            foreach (var dir in extractedDirsInfo.OrderBy(d => d))
+            {
+                var relPath = Path.GetRelativePath(extractOutputPath, dir).Replace('\\', '/');
+                Console.WriteLine($"  {relPath}/");
+            }
             Console.WriteLine();
 
             // Step 3: Compare original and extracted files
