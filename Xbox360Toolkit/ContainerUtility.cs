@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using XboxToolkit.Interface;
-using XboxToolkit.Internal;
-using XboxToolkit.Internal.Models;
-using XboxToolkit.Internal.ContainerBuilder;
+using Xbox360Toolkit.Interface;
+using Xbox360Toolkit.Internal;
+using Xbox360Toolkit.Internal.Models;
+using Xbox360Toolkit.Internal.ContainerBuilder;
 
 namespace XboxToolkit
 {
@@ -131,28 +131,22 @@ namespace XboxToolkit
                 // Allocate sectors efficiently - maximize usage between magic sector and directory tables
                 var sectorAllocator = new SectorAllocator(magicSector, baseSector);
                 
-                // Allocate directories FIRST (they need to be in a known location after magic sector)
-                var rootDirSize = directorySizes[string.Empty];
-                var rootDirSectors = Helpers.RoundToMultiple(rootDirSize, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
-                var rootDirSector = sectorAllocator.AllocateDirectorySectors(rootDirSectors);
-                
-                // Set root directory sector (relative to baseSector)
-                rootDirectory.Sector = rootDirSector - baseSector;
-
-                // Allocate sectors for all subdirectories
-                ContainerBuilderHelper.AllocateDirectorySectors(rootDirectory, directorySizes, sectorAllocator, baseSector);
-                
-                // Allocate sectors for files - try to fill space between base and magic sector first, then after directories
+                // Allocate sectors for files first - try to fill space between base and magic sector
                 // Sort files by size (largest first) to better fill sectors
                 var sortedFiles = fileEntries.OrderByDescending(f => f.Size).ToList();
-                uint totalFileSectorsAllocated = 0;
                 foreach (var fileEntry in sortedFiles)
                 {
                     var fileSectors = Helpers.RoundToMultiple(fileEntry.Size, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
-                    var allocatedSector = sectorAllocator.AllocateFileSectors(fileSectors);
-                    fileEntry.Sector = allocatedSector - baseSector;
-                    totalFileSectorsAllocated += fileSectors;
+                    fileEntry.Sector = sectorAllocator.AllocateFileSectors(fileSectors) - baseSector;
                 }
+
+                // Allocate directories after magic sector (they need to be in a known location)
+                var rootDirSize = directorySizes[string.Empty];
+                var rootDirSectors = Helpers.RoundToMultiple(rootDirSize, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
+                var rootDirSector = sectorAllocator.AllocateDirectorySectors(rootDirSectors);
+
+                // Allocate sectors for all subdirectories
+                ContainerBuilderHelper.AllocateDirectorySectors(rootDirectory, directorySizes, sectorAllocator, baseSector);
 
                 progress?.Invoke(0.4f);
 
@@ -163,11 +157,7 @@ namespace XboxToolkit
                 progress?.Invoke(0.6f);
 
                 // Write ISO
-                // Calculate total sectors needed - must be at least magicSector + 1, and include all allocated sectors
-                var allocatedSectors = sectorAllocator.GetTotalSectors();
-                var totalSectors = Math.Max(allocatedSectors, magicSector + 1);
-                
-                
+                var totalSectors = sectorAllocator.GetTotalSectors();
                 var iteration = 0;
                 var currentSector = 0u;
 
@@ -222,9 +212,87 @@ namespace XboxToolkit
                             }
                         }
 
-                        // Write all sectors in order from 0 to totalSectors
-                        uint sectorsWritten = 0;
-                        uint sectorsWithData = 0;
+                        // Write sectors before base sector (empty/scrubbed)
+                        for (var i = 0u; i < baseSector && currentSector < totalSectors; i++)
+                        {
+                            var scrubbedSector = new byte[Constants.XGD_SECTOR_SIZE];
+                            for (var j = 0; j < scrubbedSector.Length; j++)
+                            {
+                                scrubbedSector[j] = 0xff;
+                            }
+                            outputWriter.Write(scrubbedSector);
+                            currentSector++;
+                        }
+
+                        // Write sectors up to magic sector
+                        while (currentSector < magicSector && currentSector < totalSectors)
+                        {
+                            byte[] sectorToWrite;
+                            if (sectorMap.ContainsKey(currentSector))
+                            {
+                                sectorToWrite = sectorMap[currentSector];
+                            }
+                            else
+                            {
+                                sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
+                                Helpers.FillArray(sectorToWrite, (byte)0xff);
+                            }
+                            outputWriter.Write(sectorToWrite);
+                            currentSector++;
+                        }
+
+                        // Write magic sector with XGD header
+                        if (currentSector == magicSector && currentSector < totalSectors)
+                        {
+                            var headerSector = new byte[Constants.XGD_SECTOR_SIZE];
+                            ContainerBuilderHelper.WriteXgdHeader(headerSector, rootDirSector - baseSector, rootDirSize);
+                            outputWriter.Write(headerSector);
+                            currentSector++;
+                        }
+                        
+                        // Add directory sectors to map
+                        foreach (var dir in directoryData)
+                        {
+                            var dirSectors = Helpers.RoundToMultiple((uint)dir.Value.Length, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
+                            var dirSector = dir.Key == string.Empty ? rootDirSector : ContainerBuilderHelper.GetDirectorySector(dir.Key, rootDirectory, baseSector);
+                            
+                            for (var i = 0u; i < dirSectors; i++)
+                            {
+                                var sectorIndex = dirSector + i;
+                                var offset = (int)(i * Constants.XGD_SECTOR_SIZE);
+                                var length = Math.Min(Constants.XGD_SECTOR_SIZE, dir.Value.Length - offset);
+                                var sectorData = new byte[Constants.XGD_SECTOR_SIZE];
+                                if (length > 0)
+                                {
+                                    Array.Copy(dir.Value, offset, sectorData, 0, length);
+                                }
+                                sectorMap[sectorIndex] = sectorData;
+                            }
+                        }
+
+                        // Add file sectors to map
+                        foreach (var fileEntry in fileEntries)
+                        {
+                            var fileSector = fileEntry.Sector + baseSector;
+                            var fileSectors = Helpers.RoundToMultiple(fileEntry.Size, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
+                            
+                            using (var fileStream = File.OpenRead(fileEntry.FullPath))
+                            {
+                                for (var i = 0u; i < fileSectors; i++)
+                                {
+                                    var sectorIndex = fileSector + i;
+                                    var sectorData = new byte[Constants.XGD_SECTOR_SIZE];
+                                    var bytesRead = fileStream.Read(sectorData, 0, (int)Constants.XGD_SECTOR_SIZE);
+                                    if (bytesRead < Constants.XGD_SECTOR_SIZE)
+                                    {
+                                        Helpers.FillArray(sectorData, (byte)0, bytesRead, (int)(Constants.XGD_SECTOR_SIZE - bytesRead));
+                                    }
+                                    sectorMap[sectorIndex] = sectorData;
+                                }
+                            }
+                        }
+
+                        // Write all sectors in order
                         while (currentSector < totalSectors)
                         {
                             var estimatedSize = outputStream.Position + Constants.XGD_SECTOR_SIZE;
@@ -235,35 +303,18 @@ namespace XboxToolkit
                             }
 
                             byte[] sectorToWrite;
-                            if (currentSector == magicSector)
+                            if (sectorMap.ContainsKey(currentSector))
                             {
-                                // Write magic sector with XGD header
-                                sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                ContainerBuilderHelper.WriteXgdHeader(sectorToWrite, rootDirSector - baseSector, rootDirSize);
-                                sectorsWithData++;
-                            }
-                            else if (currentSector < baseSector)
-                            {
-                                // Scrubbed sector before base (0xFF filled)
-                                sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                Helpers.FillArray(sectorToWrite, (byte)0xff);
-                            }
-                            else if (sectorMap.ContainsKey(currentSector))
-                            {
-                                // Sector with file or directory data
                                 sectorToWrite = sectorMap[currentSector];
-                                sectorsWithData++;
                             }
                             else
                             {
-                                // Scrubbed sector (0xFF filled)
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
                                 Helpers.FillArray(sectorToWrite, (byte)0xff);
                             }
 
                             outputWriter.Write(sectorToWrite);
                             currentSector++;
-                            sectorsWritten++;
 
                             var currentProgress = 0.6f + 0.4f * (currentSector / (float)totalSectors);
                             progress?.Invoke(currentProgress);
@@ -340,28 +391,22 @@ namespace XboxToolkit
                 // Allocate sectors efficiently - maximize usage between magic sector and directory tables
                 var sectorAllocator = new SectorAllocator(magicSector, baseSector);
                 
-                // Allocate directories FIRST (they need to be in a known location after magic sector)
-                var rootDirSize = directorySizes[string.Empty];
-                var rootDirSectors = Helpers.RoundToMultiple(rootDirSize, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
-                var rootDirSector = sectorAllocator.AllocateDirectorySectors(rootDirSectors);
-                
-                // Set root directory sector (relative to baseSector)
-                rootDirectory.Sector = rootDirSector - baseSector;
-
-                // Allocate sectors for all subdirectories
-                ContainerBuilderHelper.AllocateDirectorySectors(rootDirectory, directorySizes, sectorAllocator, baseSector);
-                
-                // Allocate sectors for files - try to fill space between base and magic sector first, then after directories
+                // Allocate sectors for files first - try to fill space between base and magic sector
                 // Sort files by size (largest first) to better fill sectors
                 var sortedFiles = fileEntries.OrderByDescending(f => f.Size).ToList();
-                uint totalFileSectorsAllocated = 0;
                 foreach (var fileEntry in sortedFiles)
                 {
                     var fileSectors = Helpers.RoundToMultiple(fileEntry.Size, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
-                    var allocatedSector = sectorAllocator.AllocateFileSectors(fileSectors);
-                    fileEntry.Sector = allocatedSector - baseSector;
-                    totalFileSectorsAllocated += fileSectors;
+                    fileEntry.Sector = sectorAllocator.AllocateFileSectors(fileSectors) - baseSector;
                 }
+
+                // Allocate directories after magic sector (they need to be in a known location)
+                var rootDirSize = directorySizes[string.Empty];
+                var rootDirSectors = Helpers.RoundToMultiple(rootDirSize, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
+                var rootDirSector = sectorAllocator.AllocateDirectorySectors(rootDirSectors);
+
+                // Allocate sectors for all subdirectories
+                ContainerBuilderHelper.AllocateDirectorySectors(rootDirectory, directorySizes, sectorAllocator, baseSector);
 
                 progress?.Invoke(0.4f);
 
@@ -468,13 +513,7 @@ namespace XboxToolkit
                             }
 
                             byte[] sectorToWrite;
-                            if (currentSector == magicSector)
-                            {
-                                // Write magic sector with XGD header
-                                sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                ContainerBuilderHelper.WriteXgdHeader(sectorToWrite, rootDirSector - baseSector, rootDirSize);
-                            }
-                            else if (currentSector < baseSector)
+                            if (currentSector < baseSector)
                             {
                                 // Scrubbed sector before base (0xFF filled)
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
@@ -482,8 +521,13 @@ namespace XboxToolkit
                             }
                             else if (sectorMap.ContainsKey(currentSector))
                             {
-                                // Sector with file or directory data
                                 sectorToWrite = sectorMap[currentSector];
+                                
+                                // Write magic sector with XGD header if needed
+                                if (currentSector == magicSector)
+                                {
+                                    ContainerBuilderHelper.WriteXgdHeader(sectorToWrite, rootDirSector - baseSector, rootDirSize);
+                                }
                             }
                             else
                             {

@@ -1,4 +1,8 @@
 ﻿using Microsoft.VisualBasic;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using XboxToolkit;
 using XboxToolkit.Interface;
 
@@ -111,7 +115,7 @@ namespace XboxToolkitTest
         }
 
 
-        static void Main()
+        static void MainOld()
         {
             ProcessPngs();
 
@@ -122,7 +126,7 @@ namespace XboxToolkitTest
                 var m = cc.TryMount();
                 var n = cc.TryGetDefault(out var defaultData2, out var container);
                 File.WriteAllBytes(@"J:\iso.xex", defaultData2);
-                var qq = XexUtility.TryExtractXexMetaData(defaultData2, out  var metadata);
+                var qq = XexUtility.TryExtractXexMetaData(defaultData2, out var metadata);
 
                 //XboxToolkit.ContainerUtility.ConvertContainerToCCI(cc, ProcessingOptions.All, @"J:\Army of Two (USA)\Army of Two (USA).cci", null);
 
@@ -229,6 +233,209 @@ namespace XboxToolkitTest
 
             File.WriteAllBytes("thumb.png", metaData.Thumbnail);
             Console.WriteLine("Success.");
+        }
+
+        static void Main()
+        {
+            TestFolderToISO();
+        }
+
+        static void TestFolderToISO()
+        {
+            // Hardcoded folder path - change this to your test folder
+            var sourceFolder = @"E:\isotest\game";
+            var isoOutputPath = @"E:\isotest\TestFolder.iso";
+            var extractOutputPath = @"E:\isotest\TestFolder_Extracted";
+            var comparisonOutputPath = @"E:\isotest\TestFolder_Comparison.txt";
+
+            Console.WriteLine("=== Xbox Original ISO Creation and Verification Test ===");
+            Console.WriteLine();
+
+            // Step 1: Create ISO from folder
+            Console.WriteLine($"Step 1: Creating Xbox Original ISO from folder: {sourceFolder}");
+            if (!Directory.Exists(sourceFolder))
+            {
+                Console.WriteLine($"ERROR: Source folder does not exist: {sourceFolder}");
+                return;
+            }
+
+            // Get file info before creating ISO
+            var sourceFilesInfo = Directory.GetFiles(sourceFolder, "*", SearchOption.AllDirectories);
+            var totalSourceSize = sourceFilesInfo.Sum(f => new FileInfo(f).Length);
+            Console.WriteLine($"Source folder contains {sourceFilesInfo.Length} files, total size: {totalSourceSize / 1024.0 / 1024.0:F2} MB");
+            Console.WriteLine();
+
+            var createSuccess = ContainerUtility.ConvertFolderToISO(
+                sourceFolder,
+                ISOFormat.XboxOriginal,
+                isoOutputPath,
+                0, // No split point
+                progress => Console.Write($"\rProgress: {progress:P2}")
+            );
+
+            Console.WriteLine();
+            if (!createSuccess)
+            {
+                Console.WriteLine("ERROR: Failed to create ISO file.");
+                return;
+            }
+
+            if (!File.Exists(isoOutputPath))
+            {
+                Console.WriteLine("ERROR: ISO file was not created.");
+                return;
+            }
+
+            var isoFileInfo = new FileInfo(isoOutputPath);
+            Console.WriteLine($"SUCCESS: ISO created at: {isoOutputPath}");
+            Console.WriteLine($"ISO file size: {isoFileInfo.Length / 1024.0:F2} KB ({isoFileInfo.Length / 1024.0 / 1024.0:F2} MB)");
+            Console.WriteLine($"Expected size (approx): {totalSourceSize / 1024.0 / 1024.0:F2} MB + overhead");
+            Console.WriteLine();
+
+            // Step 2: Extract files from ISO
+            Console.WriteLine($"Step 2: Extracting files from ISO to: {extractOutputPath}");
+            using var isoContainer = new ISOContainerReader(isoOutputPath);
+            if (!isoContainer.TryMount())
+            {
+                Console.WriteLine("ERROR: Failed to mount ISO container.");
+                return;
+            }
+
+            var extractSuccess = ContainerUtility.ExtractFilesFromContainer(isoContainer, extractOutputPath);
+            if (!extractSuccess)
+            {
+                Console.WriteLine("ERROR: Failed to extract files from ISO.");
+                return;
+            }
+
+            Console.WriteLine($"SUCCESS: Files extracted to: {extractOutputPath}");
+            Console.WriteLine();
+
+            // Step 3: Compare original and extracted files
+            Console.WriteLine("Step 3: Comparing original and extracted files...");
+            var comparisonResults = new List<string>();
+            var totalFiles = 0;
+            var matchingFiles = 0;
+            var mismatchedFiles = 0;
+            var missingFiles = 0;
+            var extraFiles = 0;
+
+            // Get all files from source folder
+            var sourceFilesList = Directory.GetFiles(sourceFolder, "*", SearchOption.AllDirectories)
+                .Select(f => new
+                {
+                    FullPath = f,
+                    RelativePath = Path.GetRelativePath(sourceFolder, f).Replace('\\', '/')
+                })
+                .ToList();
+
+            // Get all files from extracted folder
+            var extractedFiles = Directory.GetFiles(extractOutputPath, "*", SearchOption.AllDirectories)
+                .Select(f => new
+                {
+                    FullPath = f,
+                    RelativePath = Path.GetRelativePath(extractOutputPath, f).Replace('\\', '/')
+                })
+                .ToDictionary(f => f.RelativePath, f => f.FullPath);
+
+            // Compare each source file
+            foreach (var sourceFile in sourceFilesList)
+            {
+                totalFiles++;
+                var relativePath = sourceFile.RelativePath;
+
+                if (!extractedFiles.ContainsKey(relativePath))
+                {
+                    missingFiles++;
+                    comparisonResults.Add($"MISSING: {relativePath} (exists in source but not in extracted)");
+                    continue;
+                }
+
+                var extractedPath = extractedFiles[relativePath];
+                extractedFiles.Remove(relativePath); // Mark as found
+
+                // Compare file contents
+                var sourceBytes = File.ReadAllBytes(sourceFile.FullPath);
+                var extractedBytes = File.ReadAllBytes(extractedPath);
+
+                if (sourceBytes.Length != extractedBytes.Length)
+                {
+                    mismatchedFiles++;
+                    comparisonResults.Add($"SIZE MISMATCH: {relativePath} (Source: {sourceBytes.Length} bytes, Extracted: {extractedBytes.Length} bytes)");
+                    continue;
+                }
+
+                var bytesMatch = true;
+                var firstMismatch = -1;
+                for (var i = 0; i < sourceBytes.Length; i++)
+                {
+                    if (sourceBytes[i] != extractedBytes[i])
+                    {
+                        bytesMatch = false;
+                        firstMismatch = i;
+                        break;
+                    }
+                }
+
+                if (!bytesMatch)
+                {
+                    mismatchedFiles++;
+                    comparisonResults.Add($"CONTENT MISMATCH: {relativePath} (First difference at byte offset: {firstMismatch})");
+                }
+                else
+                {
+                    matchingFiles++;
+                }
+            }
+
+            // Check for extra files in extracted folder
+            foreach (var extraFile in extractedFiles)
+            {
+                extraFiles++;
+                comparisonResults.Add($"EXTRA: {extraFile.Key} (exists in extracted but not in source)");
+            }
+
+            // Write comparison results
+            using var writer = new StreamWriter(comparisonOutputPath);
+            writer.WriteLine("=== File Comparison Results ===");
+            writer.WriteLine($"Total files in source: {totalFiles}");
+            writer.WriteLine($"Matching files: {matchingFiles}");
+            writer.WriteLine($"Mismatched files: {mismatchedFiles}");
+            writer.WriteLine($"Missing files: {missingFiles}");
+            writer.WriteLine($"Extra files: {extraFiles}");
+            writer.WriteLine();
+
+            if (comparisonResults.Count > 0)
+            {
+                writer.WriteLine("=== Detailed Results ===");
+                foreach (var result in comparisonResults)
+                {
+                    writer.WriteLine(result);
+                }
+            }
+            else
+            {
+                writer.WriteLine("All files match perfectly!");
+            }
+
+            // Print summary to console
+            Console.WriteLine($"Total files: {totalFiles}");
+            Console.WriteLine($"Matching: {matchingFiles}");
+            Console.WriteLine($"Mismatched: {mismatchedFiles}");
+            Console.WriteLine($"Missing: {missingFiles}");
+            Console.WriteLine($"Extra: {extraFiles}");
+            Console.WriteLine();
+
+            if (mismatchedFiles == 0 && missingFiles == 0 && extraFiles == 0)
+            {
+                Console.WriteLine("SUCCESS: All files match perfectly!");
+            }
+            else
+            {
+                Console.WriteLine($"WARNING: Found {mismatchedFiles + missingFiles + extraFiles} issues. See {comparisonOutputPath} for details.");
+            }
+
+            Console.WriteLine($"Detailed results written to: {comparisonOutputPath}");
         }
     }
 }

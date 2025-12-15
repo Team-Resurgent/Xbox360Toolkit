@@ -48,7 +48,7 @@ namespace XboxToolkit.Internal.ContainerBuilder
         public uint AllocateFileSectors(uint count)
         {
             // Try to allocate files in the gap between base sector and magic sector first
-            // If that space is full, allocate after directories
+            // If that space is full, allocate after magic sector (and after directories if they exist)
             if (mCurrentSector < mMagicSector)
             {
                 // Check if we can fit in the gap before magic sector
@@ -65,13 +65,8 @@ namespace XboxToolkit.Internal.ContainerBuilder
                 }
             }
 
-            // If directories haven't been allocated yet, we can use that space
-            // Otherwise, allocate after directories
-            if (!mDirectoriesAllocated)
-            {
-                mCurrentSector = mMagicSector + 1;
-            }
-            else if (mCurrentSector < mDirectoryStartSector)
+            // If we're at or past magic sector, allocate after directories (if they exist) or right after magic sector
+            if (mDirectoriesAllocated && mCurrentSector < mDirectoryStartSector)
             {
                 // Fill space between magic sector and directories
                 var startSector = mCurrentSector;
@@ -79,7 +74,13 @@ namespace XboxToolkit.Internal.ContainerBuilder
                 return startSector;
             }
 
-            // Allocate after directories
+            // If directories are allocated, make sure we're after them
+            if (mDirectoriesAllocated && mCurrentSector < mDirectoryStartSector)
+            {
+                mCurrentSector = mDirectoryStartSector;
+            }
+
+            // Allocate after magic sector (and after directories if they exist)
             var fileStartSector = mCurrentSector;
             mCurrentSector += count;
             return fileStartSector;
