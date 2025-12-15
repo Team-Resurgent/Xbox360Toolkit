@@ -1,3 +1,3 @@
-Xbox 360 Toolkit
+Xbox Toolkit
 
-Xbox 360 Toolkit library.
+Xbox Toolkit library.
