@@ -8,7 +8,7 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<Description>A Xbox toolkit library.</Description>
+		<Description>A comprehensive .NET library for working with Xbox 360 and Xbox Original game containers, executables, and metadata. Supports reading ISO, CCI, and GOD containers, extracting XEX metadata, decrypting/decompressing XEX files, creating ISO files from folders, and fetching marketplace metadata. Includes cross-platform native libraries for Windows, Linux, and macOS.</Description>
 		<AssemblyVersion>1.1.0</AssemblyVersion>
 		<Authors>EqUiNoX</Authors>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -16,8 +16,8 @@
 		<PackageId>XboxToolkit</PackageId>
 		<PackagePrereleaseIdentifier></PackagePrereleaseIdentifier>
 		<PackageVersion>$(AssemblyVersion)$(PackagePrereleaseIdentifier)</PackageVersion>
-		<PackageTags>Xbox toolkit library</PackageTags>
-		<PackageProjectUrl>https://github.com/Team-Resurgent/XexUnpack</PackageProjectUrl>
+		<PackageTags>Xbox;Xbox360;Xbox-Original;ISO;CCI;GOD;XEX;Game-Container;Xbox-Toolkit;Xbox360-Toolkit;Container-Reader;Xex-Extractor</PackageTags>
+		<PackageProjectUrl>https://github.com/Team-Resurgent/XboxToolkit</PackageProjectUrl>
 		<RootNamespace>XboxToolkit</RootNamespace>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<Title>XboxToolkit</Title>
