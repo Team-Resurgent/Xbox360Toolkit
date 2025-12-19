@@ -33,6 +33,23 @@ XboxToolkit provides a complete set of tools for reading, extracting, and creati
 - Download game images and thumbnails
 - Parse marketplace XML data
 
+### Image Processing & Texture Conversion
+- **XPR Texture Support**: Convert Xbox texture files (XPR) to JPEG format
+- **DDS Support**: Convert DirectDraw Surface (DDS) files to PNG format
+- **DXT Compression**: Support for DXT1, DXT3, and DXT5 texture compression formats
+- **Automatic Format Detection**: Automatically detects and converts various image formats
+
+### Xbox Original (XBE) Support
+- Extract and replace images from XBE executables (logo, title, save images)
+- Extract certificate information from XBE files
+- Replace certificate information in XBE files
+- Modify XBE title images
+
+### BIOS Logo Processing
+- Decode Xbox BIOS boot logos to PNG format
+- Encode PNG images to Xbox BIOS logo format
+- Support for custom boot logo creation
+
 ### Additional Features
 - XGD (Xbox Game Disc) information extraction
 - Sector-level decoding and reading
@@ -50,7 +67,7 @@ The package includes native libraries for Windows (x64), Linux (x64), and macOS.
 
 ## Requirements
 
-- .NET Standard 2.0 or higher
+- .NET 6.0 or higher
 - Native libraries are included in the NuGet package
 
 ## Usage Examples
@@ -122,14 +139,86 @@ string marketplaceUrl = MarketplaceUtility.GetMarketPlaceUrl(titleId);
 // Use the URL to fetch additional metadata
 ```
 
+### Converting XPR Textures
+
+```csharp
+byte[] xprData = File.ReadAllBytes("texture.xpr");
+if (XprUtility.ConvertXprToJpeg(xprData, out var jpegData))
+{
+    File.WriteAllBytes("texture.jpg", jpegData);
+}
+```
+
+### Converting DDS Files
+
+```csharp
+byte[] ddsData = File.ReadAllBytes("texture.dds");
+if (XprUtility.ConvertDdsToPng(ddsData, out var pngData))
+{
+    File.WriteAllBytes("texture.png", pngData);
+}
+```
+
+### Working with XBE Files
+
+```csharp
+byte[] xbeData = File.ReadAllBytes("default.xbe");
+
+// Extract certificate information
+if (XbeUtility.TryGetXbeCert(xbeData, out var cert))
+{
+    Console.WriteLine($"Title: {cert.TitleName}");
+    Console.WriteLine($"Title ID: {cert.TitleId:X8}");
+}
+
+// Extract title image
+if (XbeUtility.TryGetXbeImage(xbeData, XbeUtility.ImageType.TitleImage, out var imageData))
+{
+    File.WriteAllBytes("title_image.png", imageData);
+}
+
+// Replace title image
+byte[] newImage = File.ReadAllBytes("new_title.png");
+XbeUtility.TryReplaceXbeTitleImage(xbeData, newImage);
+```
+
+### Processing BIOS Logos
+
+```csharp
+var biosLogo = new BiosLogoUtility();
+
+// Decode BIOS logo to PNG
+byte[] logoData = File.ReadAllBytes("bios_logo.bin");
+biosLogo.DecodeLogoImage(logoData, out var pngData);
+File.WriteAllBytes("bios_logo.png", pngData);
+
+// Encode PNG to BIOS logo format
+byte[] pngImage = File.ReadAllBytes("custom_logo.png");
+biosLogo.EncodeLogoImage(pngImage, width: 100, height: 17, out var encodedLogo);
+File.WriteAllBytes("custom_bios_logo.bin", encodedLogo);
+```
+
 ## Supported Formats
 
+### Container Formats
 - **ISO**: Xbox Original and Xbox 360 disc images
 - **CCI**: Compressed Container Image (LZ4 compressed)
 - **GOD**: Game on Demand container format
+
+### Executable Formats
 - **XEX**: Xbox 360 executable format
+- **XBE**: Xbox Original executable format
+
+### Image & Texture Formats
+- **XPR**: Xbox texture format (converts to JPEG)
+- **DDS**: DirectDraw Surface format (converts to PNG)
+- **DXT1/DXT3/DXT5**: Compressed texture formats
+- **PNG/JPEG**: Standard image formats for output
+
+### Data Formats
 - **XDBF**: Xbox Data Base Format
 - **XSRC**: Xbox Source XML format
+- **BIOS Logo**: Xbox BIOS boot logo format
 
 ## Project Structure
 
@@ -155,5 +244,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Acknowledgments
 
 This library uses the following dependencies:
-- **K4os.Compression.LZ4** - LZ4 compression support
-- **LibDeflate.NET** - GZIP decompression support
+- **K4os.Compression.LZ4** (v1.3.8) - LZ4 compression support
+- **LibDeflate.NET** (v1.19.0) - GZIP decompression support
+- **SixLabors.ImageSharp** (v3.1.12) - Image processing and format conversion

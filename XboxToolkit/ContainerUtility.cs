@@ -12,24 +12,6 @@ namespace XboxToolkit
 {
     public static class ContainerUtility
     {
-        //public static bool RepackContainerToISO(ContainerReader containerReader, string outputFile)
-        //{
-        //    if (containerReader.GetMountCount() == 0)
-        //    {
-        //        return false;
-        //    }
-
-        //    if (containerReader.TryGetDataSectors(out var dataSectors) == false)
-        //    {
-        //        return false;
-        //    }
-
-
-
-
-        //    return true;
-        //}
-
         public static string[] GetSlicesFromFile(string filename)
         {
             var slices = new List<string>();
@@ -39,7 +21,7 @@ namespace XboxToolkit
             if (subExtension?.Length == 2 && char.IsNumber(subExtension[1]))
             {
                 var fileWithoutSubExtension = Path.GetFileNameWithoutExtension(fileWithoutExtension);
-                return Directory.GetFiles(Path.GetDirectoryName(filename), $"{fileWithoutSubExtension}.?{extension}").OrderBy(s => s).ToArray();
+                return Directory.GetFiles(Path.GetDirectoryName(filename) ?? "", $"{fileWithoutSubExtension}.?{extension}").OrderBy(s => s).ToArray();
             }
             return new string[] { filename };
         }
@@ -80,9 +62,6 @@ namespace XboxToolkit
 
             return true;
         }
-
-        //Files to iso
-        //Files to cci
 
         public static bool ConvertFolderToISO(string inputFolder, ISOFormat format, string outputFile, long splitPoint, Action<float>? progress)
         {
@@ -272,7 +251,7 @@ namespace XboxToolkit
 
                     if (splitting || iteration > 0)
                     {
-                        var destFile = Path.Combine(Path.GetDirectoryName(outputFile), Path.GetFileNameWithoutExtension(outputFile) + $".{iteration + 1}{Path.GetExtension(outputFile)}");
+                        var destFile = Path.Combine(Path.GetDirectoryName(outputFile) ?? "", Path.GetFileNameWithoutExtension(outputFile) + $".{iteration + 1}{Path.GetExtension(outputFile)}");
                         if (File.Exists(destFile))
                         {
                             File.Delete(destFile);
@@ -547,7 +526,7 @@ namespace XboxToolkit
 
                     if (splitting || iteration > 0)
                     {
-                        var destFile = Path.Combine(Path.GetDirectoryName(outputFile), Path.GetFileNameWithoutExtension(outputFile) + $".{iteration + 1}{Path.GetExtension(outputFile)}");
+                        var destFile = Path.Combine(Path.GetDirectoryName(outputFile) ?? "", Path.GetFileNameWithoutExtension(outputFile) + $".{iteration + 1}{Path.GetExtension(outputFile)}");
                         if (File.Exists(destFile))
                         {
                             File.Delete(destFile);
@@ -649,7 +628,7 @@ namespace XboxToolkit
 
                 if (splitting || iteration > 0)
                 {
-                    var destFile = Path.Combine(Path.GetDirectoryName(outputFile), Path.GetFileNameWithoutExtension(outputFile) + $".{iteration + 1}{Path.GetExtension(outputFile)}");
+                    var destFile = Path.Combine(Path.GetDirectoryName(outputFile) ?? "", Path.GetFileNameWithoutExtension(outputFile) + $".{iteration + 1}{Path.GetExtension(outputFile)}");
                     if (File.Exists(destFile))
                     {
                         File.Delete(destFile);
@@ -813,7 +792,7 @@ namespace XboxToolkit
 
                 if (splitting || iteration > 0)
                 {
-                    var destFile = Path.Combine(Path.GetDirectoryName(outputFile), Path.GetFileNameWithoutExtension(outputFile) + $".{iteration + 1}{Path.GetExtension(outputFile)}");
+                    var destFile = Path.Combine(Path.GetDirectoryName(outputFile) ?? "", Path.GetFileNameWithoutExtension(outputFile) + $".{iteration + 1}{Path.GetExtension(outputFile)}");
                     if (File.Exists(destFile))
                     {
                         File.Delete(destFile);

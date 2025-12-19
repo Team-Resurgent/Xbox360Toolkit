@@ -1,22 +1,22 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>netstandard2.0</TargetFramework>
+		<TargetFramework>net6.0</TargetFramework>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<LangVersion>11.0</LangVersion>
         <Nullable>enable</Nullable>
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<Description>A comprehensive .NET library for working with Xbox 360 and Xbox Original game containers, executables, and metadata. Supports reading ISO, CCI, and GOD containers, extracting XEX metadata, decrypting/decompressing XEX files, creating ISO files from folders, and fetching marketplace metadata. Includes cross-platform native libraries for Windows, Linux, and macOS.</Description>
-		<AssemblyVersion>1.1.0</AssemblyVersion>
+		<Description>A comprehensive .NET library for working with Xbox 360 and Xbox Original game containers, executables, and metadata. Supports reading ISO, CCI, and GOD containers, extracting XEX/XBE metadata, decrypting/decompressing XEX files, creating ISO files from folders, and fetching marketplace metadata. Includes image processing: XPR/DDS texture conversion, XBE image extraction/replacement, and BIOS logo encoding/decoding. Requires .NET 6.0+. Includes cross-platform native libraries for Windows, Linux, and macOS.</Description>
+		<AssemblyVersion>1.2.0</AssemblyVersion>
 		<Authors>EqUiNoX</Authors>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<AssemblyName>XboxToolkit</AssemblyName>
 		<PackageId>XboxToolkit</PackageId>
 		<PackagePrereleaseIdentifier></PackagePrereleaseIdentifier>
 		<PackageVersion>$(AssemblyVersion)$(PackagePrereleaseIdentifier)</PackageVersion>
-		<PackageTags>Xbox;Xbox360;Xbox-Original;ISO;CCI;GOD;XEX;Game-Container;Xbox-Toolkit;Xbox360-Toolkit;Container-Reader;Xex-Extractor</PackageTags>
+		<PackageTags>Xbox;Xbox360;Xbox-Original;ISO;CCI;GOD;XEX;XBE;XPR;DDS;Game-Container;Xbox-Toolkit;Xbox360-Toolkit;Container-Reader;Xex-Extractor;Texture-Converter;Image-Processing;BIOS-Logo</PackageTags>
 		<PackageProjectUrl>https://github.com/Team-Resurgent/XboxToolkit</PackageProjectUrl>
 		<RootNamespace>XboxToolkit</RootNamespace>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
@@ -26,7 +26,7 @@
 		<UserSecretsId>1bc5a42d-53e1-4b27-9f03-fec2cceadbd5</UserSecretsId>
 		<AssemblyTitle>XboxToolkit</AssemblyTitle>
 		<RepositoryUrl>https://github.com/Team-Resurgent/XboxToolkit</RepositoryUrl>
-		<FileVersion>1.1.0</FileVersion>
+		<FileVersion>1.2.0</FileVersion>
 		<PackageLicenseExpression> GPL-3.0-only</PackageLicenseExpression>
 	</PropertyGroup>
 
@@ -53,8 +53,9 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="K4os.Compression.LZ4" Version="1.3.5" />
-	  <PackageReference Include="LibDeflate.NET" Version="1.18.0" />
+	  <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
+	  <PackageReference Include="LibDeflate.NET" Version="1.19.0" />
+	  <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
 	</ItemGroup>
 
 </Project>

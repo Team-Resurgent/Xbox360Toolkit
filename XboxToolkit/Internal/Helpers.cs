@@ -38,11 +38,11 @@ namespace XboxToolkit.Internal
             return length == 0 ? string.Empty : Encoding.Unicode.GetString(buffer, 0, length);
         }
 
-        public static T ByteToType<T>(BinaryReader reader)
+        public static T? ByteToType<T>(BinaryReader reader)
         {
             byte[] bytes = reader.ReadBytes(Marshal.SizeOf(typeof(T)));
             GCHandle handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
-            T theStructure = (T)Marshal.PtrToStructure(handle.AddrOfPinnedObject(), typeof(T));
+            T? theStructure = (T?)Marshal.PtrToStructure(handle.AddrOfPinnedObject(), typeof(T));
             handle.Free();
             return theStructure;
         }
@@ -69,7 +69,7 @@ namespace XboxToolkit.Internal
             );
         }
 
-        public static XgdHeader GetXgdHeaer(byte[] sector)
+        public static XgdHeader? GetXgdHeaer(byte[] sector)
         {
             using var sectorStream = new MemoryStream(sector);
             using var sectorReader = new BinaryReader(sectorStream);

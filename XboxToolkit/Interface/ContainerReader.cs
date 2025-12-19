@@ -4,8 +4,6 @@ using System.IO;
 using System.Text;
 using XboxToolkit.Internal.Models;
 using XboxToolkit.Internal;
-using System.Security.Cryptography;
-using System.Drawing;
 
 namespace XboxToolkit.Interface
 {

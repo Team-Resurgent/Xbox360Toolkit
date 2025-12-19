@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using XboxToolkit.Internal.Models;
 
 namespace XboxToolkit.Interface
 {
