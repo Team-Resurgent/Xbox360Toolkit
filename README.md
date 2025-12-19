@@ -230,8 +230,7 @@ This project is licensed under the GPL-3.0-only License.
 
 ## Authors
 
-- **EqUiNoX** - Initial work
-- **Team Resurgent** - Copyright holder
+- **EqUiNoX** - Team Resurgent
 
 ## Repository
 
