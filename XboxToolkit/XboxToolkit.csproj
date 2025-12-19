@@ -24,6 +24,10 @@
 		<Copyright>Team Resurgent</Copyright>
 		<PackageReadmeFile>Readme.md</PackageReadmeFile>
 		<UserSecretsId>1bc5a42d-53e1-4b27-9f03-fec2cceadbd5</UserSecretsId>
+		<AssemblyTitle>XboxToolkit</AssemblyTitle>
+		<RepositoryUrl>https://github.com/Team-Resurgent/XboxToolkit</RepositoryUrl>
+		<FileVersion>1.1.0</FileVersion>
+		<PackageLicenseExpression> GPL-3.0-only</PackageLicenseExpression>
 	</PropertyGroup>
 
 	<ItemGroup>
