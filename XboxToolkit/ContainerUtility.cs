@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using XboxToolkit.Interface;
 using XboxToolkit.Internal;
@@ -805,6 +807,365 @@ namespace XboxToolkit
 
             progress?.Invoke(1);
             return true;
+        }
+
+        public struct FileInfo
+        {
+            public bool IsFile { get; set; }
+            public string Path { get; set; }
+            public string Filename { get; set; }
+            public long Size { get; set; }
+            public int StartSector { get; set; }
+            public int EndSector { get; set; }
+            public string InSlices { get; set; }
+        }
+
+        public static void GetFileInfoFromContainer(ContainerReader containerReader, Action<FileInfo> info, Action<float>? progress, CancellationToken cancellationToken)
+        {
+            if (progress != null)
+            {
+                progress(0);
+            }
+
+            if (containerReader.GetMountCount() == 0)
+            {
+                throw new Exception("Container not mounted.");
+            }
+
+            try
+            {
+                var decoder = containerReader.GetDecoder();
+                var xgdInfo = decoder.GetXgdInfo();
+
+                var rootSectors = xgdInfo.RootDirSize / Constants.XGD_SECTOR_SIZE;
+                var rootData = new byte[xgdInfo.RootDirSize];
+                for (var i = 0; i < rootSectors; i++)
+                {
+                    var currentRootSector = xgdInfo.BaseSector + xgdInfo.RootDirSector + (uint)i;
+                    if (decoder.TryReadSector(currentRootSector, out var sectorData) == false)
+                    {
+                        return;
+                    }
+                    Array.Copy(sectorData, 0, rootData, i * Constants.XGD_SECTOR_SIZE, Constants.XGD_SECTOR_SIZE);
+                }
+
+                var treeNodes = new List<TreeNodeInfo>
+                {
+                    new TreeNodeInfo
+                    {
+                        DirectoryData = rootData,
+                        Offset = 0,
+                        Path = string.Empty
+                    }
+                };
+
+                var totalNodes = 1;
+                var processedNodes = 0;
+
+                while (treeNodes.Count > 0)
+                {
+                    var currentTreeNode = treeNodes[0];
+                    treeNodes.RemoveAt(0);
+                    processedNodes++;
+
+                    using (var directoryDataStream = new MemoryStream(currentTreeNode.DirectoryData))
+                    using (var directoryDataDataReader = new BinaryReader(directoryDataStream))
+                    {
+                        if (currentTreeNode.Offset * 4 >= directoryDataStream.Length)
+                        {
+                            continue;
+                        }
+
+                        directoryDataStream.Position = currentTreeNode.Offset * 4;
+
+                        var left = directoryDataDataReader.ReadUInt16();
+                        var right = directoryDataDataReader.ReadUInt16();
+                        var sector = directoryDataDataReader.ReadUInt32();
+                        var size = directoryDataDataReader.ReadUInt32();
+                        var attribute = directoryDataDataReader.ReadByte();
+                        var nameLength = directoryDataDataReader.ReadByte();
+                        var filenameBytes = directoryDataDataReader.ReadBytes(nameLength);
+                        var filename = Encoding.ASCII.GetString(filenameBytes);
+
+                        if (left == 0xFFFF)
+                        {
+                            continue;
+                        }
+
+                        if (left != 0)
+                        {
+                            treeNodes.Add(new TreeNodeInfo
+                            {
+                                DirectoryData = currentTreeNode.DirectoryData,
+                                Offset = left,
+                                Path = currentTreeNode.Path
+                            });
+                            totalNodes++;
+                        }
+
+                        if ((attribute & 0x10) != 0)
+                        {
+                            if (size > 0)
+                            {
+                                var directorySectors = size / Constants.XGD_SECTOR_SIZE;
+                                var directoryData = new byte[size];
+                                for (var i = 0; i < directorySectors; i++)
+                                {
+                                    var currentDirectorySector = xgdInfo.BaseSector + sector + (uint)i;
+                                    if (decoder.TryReadSector(currentDirectorySector, out var sectorData) == false)
+                                    {
+                                        return;
+                                    }
+                                    Array.Copy(sectorData, 0, directoryData, i * Constants.XGD_SECTOR_SIZE, Constants.XGD_SECTOR_SIZE);
+                                }
+
+                                treeNodes.Add(new TreeNodeInfo
+                                {
+                                    DirectoryData = directoryData,
+                                    Offset = 0,
+                                    Path = System.IO.Path.Combine(currentTreeNode.Path, filename)
+                                });
+                                totalNodes++;
+                                info(new FileInfo
+                                {
+                                    IsFile = false,
+                                    Path = System.IO.Path.Combine(currentTreeNode.Path, filename),
+                                    Filename = filename,
+                                    Size = size,
+                                    StartSector = (int)(xgdInfo.BaseSector + sector),
+                                    EndSector = (int)(xgdInfo.BaseSector + sector + ((size + Constants.XGD_SECTOR_SIZE - 1) / Constants.XGD_SECTOR_SIZE) - 1),
+                                    InSlices = "N/A"
+                                });
+                            }
+                        }
+                        else
+                        {
+                            if (size > 0)
+                            {
+                                var startSector = (int)(xgdInfo.BaseSector + sector);
+                                var endSector = (int)(xgdInfo.BaseSector + sector + ((size + Constants.XGD_SECTOR_SIZE - 1) / Constants.XGD_SECTOR_SIZE) - 1);
+                                info(new FileInfo
+                                {
+                                    IsFile = true,
+                                    Path = currentTreeNode.Path,
+                                    Filename = filename,
+                                    Size = size,
+                                    StartSector = startSector,
+                                    EndSector = endSector,
+                                    InSlices = "N/A"
+                                });
+                            }
+                            else
+                            {
+                                info(new FileInfo
+                                {
+                                    IsFile = true,
+                                    Path = currentTreeNode.Path,
+                                    Filename = filename,
+                                    Size = size,
+                                    StartSector = -1,
+                                    EndSector = -1,
+                                    InSlices = "N/A"
+                                });
+                            }
+                        }
+
+                        if (right != 0)
+                        {
+                            treeNodes.Add(new TreeNodeInfo
+                            {
+                                DirectoryData = currentTreeNode.DirectoryData,
+                                Offset = right,
+                                Path = currentTreeNode.Path
+                            });
+                            totalNodes++;
+                        }
+
+                        if (progress != null)
+                        {
+                            progress(processedNodes / (float)totalNodes);
+                        }
+
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.Print(ex.ToString());
+                throw;
+            }
+        }
+
+        public static string GetChecksumFromContainer(ContainerReader containerReader, Action<float>? progress, CancellationToken cancellationToken)
+        {
+            if (progress != null)
+            {
+                progress(0);
+            }
+
+            if (containerReader.GetMountCount() == 0)
+            {
+                throw new Exception("Container not mounted.");
+            }
+
+            try
+            {
+                var decoder = containerReader.GetDecoder();
+                using var hash = SHA256.Create();
+                
+                var totalSectors = decoder.TotalSectors();
+                for (var i = 0u; i < totalSectors; i++)
+                {
+                    if (decoder.TryReadSector(i, out var buffer))
+                    {
+                        hash.TransformBlock(buffer, 0, buffer.Length, null, 0);
+                    }
+                    
+                    if (progress != null)
+                    {
+                        progress(i / (float)totalSectors);
+                    }
+                    
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                }
+                
+                hash.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                var sha256Hash = hash.Hash;
+                if (sha256Hash == null)
+                {
+                    throw new ArgumentOutOfRangeException();
+                }
+                return BitConverter.ToString(sha256Hash).Replace("-", string.Empty);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.Print(ex.ToString());
+                throw;
+            }
+        }
+
+        public static void CompareContainers(ContainerReader containerReader1, ContainerReader containerReader2, Action<string> log, Action<float>? progress)
+        {
+            if (containerReader1.GetMountCount() == 0 || containerReader2.GetMountCount() == 0)
+            {
+                log("One or both containers are not mounted.");
+                return;
+            }
+
+            try
+            {
+                var decoder1 = containerReader1.GetDecoder();
+                var decoder2 = containerReader2.GetDecoder();
+                var xgdInfo1 = decoder1.GetXgdInfo();
+                var xgdInfo2 = decoder2.GetXgdInfo();
+
+                if (xgdInfo1.BaseSector > 0)
+                {
+                    log("First contains a video partition, compare will ignore those sectors.");
+                }
+
+                if (xgdInfo2.BaseSector > 0)
+                {
+                    log("Second contains a video partition, compare will ignore those sectors.");
+                }
+
+                var totalSectors1 = decoder1.TotalSectors();
+                var totalSectors2 = decoder2.TotalSectors();
+
+                if (totalSectors1 - xgdInfo1.BaseSector != totalSectors2 - xgdInfo2.BaseSector)
+                {
+                    log("Expected sector counts do not match, assuming image could be trimmed.");
+                }
+
+                log("");
+                log("Getting data sectors hash for first...");
+                if (!containerReader1.TryGetDataSectors(out var dataSectors1))
+                {
+                    log("Failed to get data sectors from first container.");
+                    return;
+                }
+                var dataSectors1Array = dataSectors1.ToArray();
+                Array.Sort(dataSectors1Array);
+
+                log("Calculating data sector hashes for first...");
+                using var dataSectorsHash1 = SHA256.Create();
+                for (var i = 0; i < dataSectors1Array.Length; i++)
+                {
+                    var dataSector1 = dataSectors1Array[i];
+                    if (decoder1.TryReadSector(dataSector1, out var buffer))
+                    {
+                        dataSectorsHash1.TransformBlock(buffer, 0, buffer.Length, null, 0);
+                    }
+                    if (progress != null)
+                    {
+                        progress(i / (float)dataSectors1Array.Length * 0.5f);
+                    }
+                }
+                dataSectorsHash1.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                var dataChecksum1 = dataSectorsHash1.Hash;
+                if (dataChecksum1 == null)
+                {
+                    throw new ArgumentOutOfRangeException();
+                }
+                var dataSectorsHash1Result = BitConverter.ToString(dataChecksum1).Replace("-", string.Empty);
+
+                log("Getting data sectors hash for second...");
+                if (!containerReader2.TryGetDataSectors(out var dataSectors2))
+                {
+                    log("Failed to get data sectors from second container.");
+                    return;
+                }
+                var dataSectors2Array = dataSectors2.ToArray();
+                Array.Sort(dataSectors2Array);
+
+                log("Calculating data sector hash for second...");
+                using var dataSectorsHash2 = SHA256.Create();
+                for (var i = 0; i < dataSectors2Array.Length; i++)
+                {
+                    var dataSector2 = dataSectors2Array[i];
+                    if (decoder2.TryReadSector(dataSector2, out var buffer))
+                    {
+                        dataSectorsHash2.TransformBlock(buffer, 0, buffer.Length, null, 0);
+                    }
+                    if (progress != null)
+                    {
+                        progress(0.5f + i / (float)dataSectors2Array.Length * 0.5f);
+                    }
+                }
+                dataSectorsHash2.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                var dataChecksum2 = dataSectorsHash2.Hash;
+                if (dataChecksum2 == null)
+                {
+                    throw new ArgumentOutOfRangeException();
+                }
+                var dataSectorsHash2Result = BitConverter.ToString(dataChecksum2).Replace("-", string.Empty);
+
+                if (dataSectorsHash1Result == dataSectorsHash2Result)
+                {
+                    log("Data sectors match.");
+                }
+                else
+                {
+                    log("Data sectors do not match.");
+                }
+
+                log("");
+                log($"First image data sectors range: {dataSectors1Array.First()} - {dataSectors1Array.Last()}");
+                log($"Second image data sectors range: {dataSectors2Array.First()} - {dataSectors2Array.Last()}");
+                log("");
+            }
+            catch (Exception ex)
+            {
+                log($"Error during comparison: {ex.Message}");
+                System.Diagnostics.Debug.Print(ex.ToString());
+            }
         }
     }
 }
