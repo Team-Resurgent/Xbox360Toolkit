@@ -127,7 +127,7 @@ namespace XboxToolkit
             var bitmapSize = header.Logo_Bitmap_Size;
             stream.Position = bitmapAddress - baseAddress;
 
-            var title_Name = Helpers.GetUnicodeString(cert.Title_Name);
+            var title_Name = UnicodeHelper.GetUnicodeString(cert.Title_Name);
 
             if (header.Sections > 0)
             {
@@ -144,7 +144,7 @@ namespace XboxToolkit
                         stream.Position = section.Section_Name_Addr - baseAddress;
 
                         var sectionNameBytes = reader.ReadBytes(20);
-                        name = Helpers.GetUtf8String(sectionNameBytes);
+                        name = UnicodeHelper.GetUtf8String(sectionNameBytes);
                     }
 
                     var rawaddress = section.Raw_Addr;
@@ -195,7 +195,7 @@ namespace XboxToolkit
                 return true;
             }
 
-            var title_Name = Helpers.GetUnicodeString(cert.Title_Name);
+            var title_Name = UnicodeHelper.GetUnicodeString(cert.Title_Name);
 
             if (header.Sections > 0)
             {
@@ -212,7 +212,7 @@ namespace XboxToolkit
                         stream.Position = section.Section_Name_Addr - baseAddress;
 
                         var sectionNameBytes = reader.ReadBytes(20);
-                        name = Helpers.GetUtf8String(sectionNameBytes);
+                        name = UnicodeHelper.GetUtf8String(sectionNameBytes);
                     }
 
                     var rawaddress = section.Raw_Addr;

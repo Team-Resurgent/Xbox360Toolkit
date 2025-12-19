@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using XboxToolkit.Internal;
 
 namespace XboxToolkit.Models.Xbe
@@ -66,7 +65,7 @@ namespace XboxToolkit.Models.Xbe
             return gameRegion.Length == 0 ? "" : gameRegion;
         }
 
-        public string AllowedMedioaToString(uint media)
+        public string AllowedMediaToString(uint media)
         {
             var allowedMedia = string.Empty;
             if ((media & 0x00000001) == 0x00000001)
@@ -118,33 +117,6 @@ namespace XboxToolkit.Models.Xbe
                 allowedMedia = allowedMedia.Length > 0 ? $"NONSECURE_MODE, {allowedMedia}" : "NONSECURE_MODE";
             }
             return allowedMedia;
-        }
-
-        public string CleanText(string text)
-        {
-            var regex = new Regex(string.Format("\\{0}.*?\\{1}", '(', ')'));
-            var result = regex.Replace(text, string.Empty);
-            return Regex.Replace(result, " {2,}", " ").Trim();
-        }
-
-        public XbeSummary ToXbeSummary(string originalName)
-        {
-            return new XbeSummary
-            {
-                TitleId = Title_Id.ToString("X8"),
-                TitleName = Helpers.GetUnicodeString(Title_Name),
-                Version = Version.ToString("X8"),
-                GameRegion = GameRegionToString(Game_Region),
-                OriginalName = originalName,
-                CleanedName = CleanText(originalName) + " (" + GameRegionToString(Game_Region) + ")",
-                AllowedMedia = AllowedMedioaToString(Allowed_Media)
-            };
-        }
-
-        public string ToSummaryString(string originalName)
-        {
-            var xbeSummary = ToXbeSummary(originalName);
-            return $"{xbeSummary.TitleId}|{xbeSummary.TitleName}|{xbeSummary.Version}|{xbeSummary.GameRegion}|{xbeSummary.OriginalName}|{xbeSummary.CleanedName}|{xbeSummary.AllowedMedia}";
         }
     }
 }

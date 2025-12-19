@@ -18,7 +18,7 @@ namespace XboxToolkit.Interface
                 if (TryReadSector(Constants.XGD_MAGIC_SECTOR_XDKI, out var sector) == true)
                 {
                     header = Helpers.GetXgdHeaer(sector);
-                    if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
+                    if (header != null && UnicodeHelper.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && UnicodeHelper.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                     {
                         baseSector = Constants.XGD_MAGIC_SECTOR_XDKI - Constants.XGD_ISO_BASE_SECTOR;
                         found = true;
@@ -31,7 +31,7 @@ namespace XboxToolkit.Interface
                 if (TryReadSector(Constants.XGD_MAGIC_SECTOR_XGD1, out var sector) == true)
                 {
                     header = Helpers.GetXgdHeaer(sector);
-                    if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
+                    if (header != null && UnicodeHelper.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && UnicodeHelper.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                     {
                         baseSector = Constants.XGD_MAGIC_SECTOR_XGD1 - Constants.XGD_ISO_BASE_SECTOR;
                         found = true;
@@ -44,7 +44,7 @@ namespace XboxToolkit.Interface
                 if (TryReadSector(Constants.XGD_MAGIC_SECTOR_XGD3, out var sector) == true)
                 {
                     header = Helpers.GetXgdHeaer(sector);
-                    if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
+                    if (header != null && UnicodeHelper.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && UnicodeHelper.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                     {
                         baseSector = Constants.XGD_MAGIC_SECTOR_XGD3 - Constants.XGD_ISO_BASE_SECTOR;
                         found = true;
@@ -57,7 +57,7 @@ namespace XboxToolkit.Interface
                 if (TryReadSector(Constants.XGD_MAGIC_SECTOR_XGD2, out var sector) == true)
                 {
                     header = Helpers.GetXgdHeaer(sector);
-                    if (header != null && Helpers.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && Helpers.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
+                    if (header != null && UnicodeHelper.GetUtf8String(header.Magic).Equals(Constants.XGD_IMAGE_MAGIC) && UnicodeHelper.GetUtf8String(header.MagicTail).Equals(Constants.XGD_IMAGE_MAGIC))
                     {
                         baseSector = Constants.XGD_MAGIC_SECTOR_XGD2 - Constants.XGD_ISO_BASE_SECTOR;
                         found = true;

@@ -56,7 +56,7 @@ namespace XboxToolkit
 
                 var xsrcHeader = Helpers.ByteToType<XsrcHeader>(xsrcReader);
 
-                var magic = Helpers.GetUtf8String(xsrcHeader.Magic);
+                var magic = UnicodeHelper.GetUtf8String(xsrcHeader.Magic);
                 if (magic.Equals("XSRC") == false)
                 {
                     return Array.Empty<byte>();
@@ -64,7 +64,7 @@ namespace XboxToolkit
 
                 var fileNameLen = Helpers.ConvertEndian(xsrcHeader.FileNameLen);
                 var fileNameData = xsrcReader.ReadBytes((int)fileNameLen);
-                var fileName = Helpers.GetUtf8String(fileNameData);
+                var fileName = UnicodeHelper.GetUtf8String(fileNameData);
 
                 var xsrcBody = Helpers.ByteToType<XsrcBody>(xsrcReader);
                 var decompressedSize = Helpers.ConvertEndian(xsrcBody.DecompressedSize);
@@ -97,7 +97,7 @@ namespace XboxToolkit
             var result = elements[0].Value;
             for (int i = 0; i < elements.Length; i++)
             {
-                var locale = elements[i].FirstAttribute.Value;
+                var locale = elements[i]?.FirstAttribute?.Value;
                 if (string.Equals(locale, desiredLanguage) == true) 
                 {
                     result = elements[i].Value;
@@ -285,7 +285,7 @@ namespace XboxToolkit
 
                     xexContext.Header = Helpers.ByteToType<XexHeader>(xexReader);
 
-                    var magic = Helpers.GetUtf8String(xexContext.Header.Magic);
+                    var magic = UnicodeHelper.GetUtf8String(xexContext.Header.Magic);
                     if (magic.Equals("XEX2") == false)
                     {
                         System.Diagnostics.Debug.Print("Invalid XEX header magic.");
@@ -431,7 +431,7 @@ namespace XboxToolkit
                     for (var i = 0; i < headerSectionCount; i++)
                     {
                         var headerSectionEntry = Helpers.ByteToType<XexHeaderSectionEntry>(xexReader);
-                        var headerSectionName = Helpers.GetUtf8String(headerSectionEntry.SectionName);
+                        var headerSectionName = UnicodeHelper.GetUtf8String(headerSectionEntry.SectionName);
                         var headerSearchTitle = $"{Helpers.ConvertEndian(xexContext.Execution.TitleId):X}";
                         if (headerSectionName.Equals(headerSearchTitle))
                         {
@@ -447,7 +447,7 @@ namespace XboxToolkit
                                 dataStream.Position = xdbfPosition;
 
                                 var xdbfHeader = Helpers.ByteToType<XdbfHeader>(dataReader);
-                                var xdbfMagic = Helpers.GetUtf8String(xdbfHeader.Magic);
+                                var xdbfMagic = UnicodeHelper.GetUtf8String(xdbfHeader.Magic);
                                 if (xdbfMagic.Equals("XDBF") == false)
                                 {
                                     System.Diagnostics.Debug.Print("Invalid XDBF header magic.");
@@ -485,7 +485,7 @@ namespace XboxToolkit
                                         dataStream.Position = entryOffset;
 
                                         var xstrHeader = Helpers.ByteToType<XstrHeader>(dataReader);
-                                        if (Helpers.GetUtf8String(xstrHeader.Magic) == "XSTR")
+                                        if (UnicodeHelper.GetUtf8String(xstrHeader.Magic) == "XSTR")
                                         {
                                             var xstrSize = Helpers.ConvertEndian(xstrHeader.Size);
                                             var xstrEntryCount = Helpers.ConvertEndian(xstrHeader.EntryCount);
@@ -494,7 +494,7 @@ namespace XboxToolkit
                                             {
                                                 var xstrType = Helpers.ConvertEndian(dataReader.ReadUInt16());
                                                 var xstrLen = Helpers.ConvertEndian(dataReader.ReadUInt16());
-                                                var xstrrValue = Helpers.GetUtf8String(dataReader.ReadBytes(xstrLen));
+                                                var xstrrValue = UnicodeHelper.GetUtf8String(dataReader.ReadBytes(xstrLen));
                                                 if (xstrType == 32768)
                                                 {
                                                     metaData.TitleName = xstrrValue;
@@ -520,7 +520,7 @@ namespace XboxToolkit
                                         var namespaceManager = new XmlNamespaceManager(new NameTable());
                                         namespaceManager.AddNamespace("xlast", "http://www.xboxlive.com/xlast");
 
-                                        var documentUnicode = Helpers.GetUnicodeString(xsrcData);
+                                        var documentUnicode = UnicodeHelper.GetUnicodeString(xsrcData);
                                         var xboxLiveSubmissionDocument = XDocument.Parse(documentUnicode);
                                         var gameConfigProjectElement = xboxLiveSubmissionDocument.XPathSelectElement("/xlast:XboxLiveSubmissionProject/xlast:GameConfigProject", namespaceManager);
                                         if (gameConfigProjectElement != null)
