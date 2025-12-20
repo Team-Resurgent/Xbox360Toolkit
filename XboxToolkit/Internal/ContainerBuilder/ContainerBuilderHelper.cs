@@ -8,121 +8,118 @@ namespace XboxToolkit.Internal.ContainerBuilder
 {
     internal static class ContainerBuilderHelper
     {
-        public static void ScanFolder(string basePath, string relativePath, List<FileEntry> fileEntries, List<DirectoryEntry> directoryEntries)
+        public static DirectoryEntry BuildDirectoryTree(string basePath, string relativePath, Dictionary<string, uint> directorySizes, uint sectorSize)
         {
-            var fullPath = string.IsNullOrEmpty(relativePath) ? basePath : Path.Combine(basePath, relativePath);
-            
-            var dirEntry = new DirectoryEntry { Path = relativePath };
-            directoryEntries.Add(dirEntry);
+            var rootEntry = new DirectoryEntry { Path = relativePath };
+            var stack = new Stack<(DirectoryEntry entry, string basePath, string relativePath)>();
+            stack.Push((rootEntry, basePath, relativePath));
 
-            var files = Directory.GetFiles(fullPath);
-            foreach (var file in files)
+            // Phase 1: Build the directory tree structure
+            while (stack.Count > 0)
             {
-                var fileInfo = new FileInfo(file);
-                var fileName = Path.GetFileName(file);
-                var fileRelativePath = string.IsNullOrEmpty(relativePath) ? fileName : Path.Combine(relativePath, fileName).Replace('\\', '/');
-                
-                fileEntries.Add(new FileEntry
+                var (dirEntry, currentBasePath, currentRelativePath) = stack.Pop();
+                var fullPath = string.IsNullOrEmpty(currentRelativePath) ? currentBasePath : Path.Combine(currentBasePath, currentRelativePath);
+
+                // Get files in this directory
+                var files = Directory.GetFiles(fullPath);
+                foreach (var file in files)
                 {
-                    RelativePath = fileRelativePath,
-                    FullPath = file,
-                    Size = (uint)fileInfo.Length
-                });
-                dirEntry.Files.Add(fileEntries.Last());
-            }
-
-            var subdirs = Directory.GetDirectories(fullPath);
-            foreach (var subdir in subdirs)
-            {
-                var dirName = Path.GetFileName(subdir);
-                var subdirRelativePath = string.IsNullOrEmpty(relativePath) ? dirName : Path.Combine(relativePath, dirName).Replace('\\', '/');
-                ScanFolder(basePath, subdirRelativePath, fileEntries, directoryEntries);
-            }
-        }
-
-        public static DirectoryEntry BuildDirectoryTree(List<DirectoryEntry> directoryEntries, List<FileEntry> fileEntries, string rootPath)
-        {
-            var root = directoryEntries.FirstOrDefault(d => d.Path == rootPath);
-            if (root == null)
-            {
-                root = new DirectoryEntry { Path = rootPath };
-            }
-
-            // Get files in this directory
-            root.Files = fileEntries.Where(f => 
-            {
-                var fileDir = Path.GetDirectoryName(f.RelativePath)?.Replace('\\', '/') ?? string.Empty;
-                if (string.IsNullOrEmpty(rootPath))
-                {
-                    // Root directory: files with no directory or "." directory
-                    return string.IsNullOrEmpty(fileDir) || fileDir == ".";
-                }
-                // Non-root: files whose directory matches rootPath
-                return fileDir == rootPath;
-            }).ToList();
-
-            // Get subdirectories
-            root.Subdirectories = directoryEntries
-                .Where(d => 
-                {
-                    if (d.Path == rootPath) return false; // Skip self
+                    var fileInfo = new FileInfo(file);
+                    var fileName = Path.GetFileName(file);
+                    var fileRelativePath = string.IsNullOrEmpty(currentRelativePath) ? fileName : Path.Combine(currentRelativePath, fileName).Replace('\\', '/');
                     
-                    var parentPath = Path.GetDirectoryName(d.Path)?.Replace('\\', '/') ?? string.Empty;
-                    if (string.IsNullOrEmpty(rootPath))
+                    dirEntry.Files.Add(new FileEntry
                     {
-                        // Root directory: subdirectories that are direct children (no '/' in path)
-                        // This means the path itself is just the directory name, e.g. "subdir" not "subdir/nested"
-                        return !d.Path.Contains('/');
-                    }
-                    // Non-root: subdirectories whose parent matches rootPath
-                    return parentPath == rootPath;
-                })
-                .Select(d => BuildDirectoryTree(directoryEntries, fileEntries, d.Path))
-                .ToList();
+                        RelativePath = fileRelativePath,
+                        FullPath = file,
+                        Size = (uint)fileInfo.Length
+                    });
+                }
 
-            return root;
-        }
-
-        public static void CalculateDirectorySizes(DirectoryEntry directory, Dictionary<string, uint> directorySizes, uint sectorSize)
-        {
-            uint totalSize = 0;
-
-            // Calculate size needed for all entries in this directory
-            // Only count entries with non-empty names (matching BuildDirectoryData logic)
-            var entries = new List<(bool isDir, string name, uint size)>();
-            
-            foreach (var file in directory.Files)
-            {
-                var fileName = Path.GetFileName(file.RelativePath);
-                if (!string.IsNullOrEmpty(fileName))
+                // Get subdirectories and add them to stack
+                var subdirs = Directory.GetDirectories(fullPath);
+                foreach (var subdir in subdirs)
                 {
-                    entries.Add((false, fileName, file.Size));
+                    var dirName = Path.GetFileName(subdir);
+                    var subdirRelativePath = string.IsNullOrEmpty(currentRelativePath) ? dirName : Path.Combine(currentRelativePath, dirName).Replace('\\', '/');
+                    var subdirEntry = new DirectoryEntry { Path = subdirRelativePath };
+                    dirEntry.Subdirectories.Add(subdirEntry);
+                    
+                    // Push subdirectory onto stack for processing
+                    stack.Push((subdirEntry, currentBasePath, subdirRelativePath));
                 }
             }
 
+            // Phase 2: Calculate directory sizes (post-order: children before parents)
+            var directories = new List<DirectoryEntry>();
+            var sizeStack = new Stack<DirectoryEntry>();
+            sizeStack.Push(rootEntry);
+
+            while (sizeStack.Count > 0)
+            {
+                var currentDir = sizeStack.Pop();
+                directories.Add(currentDir);
+
+                // Push subdirectories in reverse order so they're processed in correct order
+                for (int i = currentDir.Subdirectories.Count - 1; i >= 0; i--)
+                {
+                    sizeStack.Push(currentDir.Subdirectories[i]);
+                }
+            }
+
+            // Process directories in reverse order (post-order: children before parents)
+            for (int i = directories.Count - 1; i >= 0; i--)
+            {
+                var dir = directories[i];
+                uint totalSize = 0;
+
+                // Calculate size needed for all entries in this directory
+                // Only count entries with non-empty names (matching BuildDirectoryData logic)
+                var entries = new List<(bool isDir, string name, uint size)>();
+                
+                foreach (var file in dir.Files)
+                {
+                    var fileName = Path.GetFileName(file.RelativePath);
+                    if (!string.IsNullOrEmpty(fileName))
+                    {
+                        entries.Add((false, fileName, file.Size));
+                    }
+                }
+
+                foreach (var subdir in dir.Subdirectories)
+                {
+                    var dirName = Path.GetFileName(subdir.Path);
+                    if (!string.IsNullOrEmpty(dirName))
+                    {
+                        entries.Add((true, dirName, directorySizes[subdir.Path]));
+                    }
+                }
+
+                // Each entry is: left(2) + right(2) + sector(4) + size(4) + attribute(1) + nameLength(1) + filename
+                // Entries must be 4-byte aligned (padded to 4-byte boundary)
+                foreach (var entry in entries)
+                {
+                    var nameBytes = Encoding.ASCII.GetBytes(entry.name);
+                    var entryDataSize = 2 + 2 + 4 + 4 + 1 + 1 + (uint)nameBytes.Length;
+                    var entrySize = (entryDataSize + 3) & ~3u; // Round up to 4-byte boundary
+                    totalSize += entrySize;
+                }
+
+                // Round up to sector size
+                totalSize = Helpers.RoundToMultiple(totalSize, sectorSize);
+                directorySizes[dir.Path] = totalSize;
+            }
+
+            return rootEntry;
+        }
+
+        public static void CollectFileEntries(DirectoryEntry directory, List<FileEntry> fileEntries)
+        {
+            fileEntries.AddRange(directory.Files);
             foreach (var subdir in directory.Subdirectories)
             {
-                CalculateDirectorySizes(subdir, directorySizes, sectorSize);
-                var dirName = Path.GetFileName(subdir.Path);
-                if (!string.IsNullOrEmpty(dirName))
-                {
-                    entries.Add((true, dirName, directorySizes[subdir.Path]));
-                }
+                CollectFileEntries(subdir, fileEntries);
             }
-
-            // Each entry is: left(2) + right(2) + sector(4) + size(4) + attribute(1) + nameLength(1) + filename
-            // Entries must be 4-byte aligned (padded to 4-byte boundary)
-            foreach (var entry in entries)
-            {
-                var nameBytes = Encoding.ASCII.GetBytes(entry.name);
-                var entryDataSize = 2 + 2 + 4 + 4 + 1 + 1 + (uint)nameBytes.Length;
-                var entrySize = (entryDataSize + 3) & ~3u; // Round up to 4-byte boundary
-                totalSize += entrySize;
-            }
-
-            // Round up to sector size
-            totalSize = Helpers.RoundToMultiple(totalSize, sectorSize);
-            directorySizes[directory.Path] = totalSize;
         }
 
         public static void AllocateDirectorySectors(DirectoryEntry directory, Dictionary<string, uint> directorySizes, SectorAllocator allocator, uint baseSector)

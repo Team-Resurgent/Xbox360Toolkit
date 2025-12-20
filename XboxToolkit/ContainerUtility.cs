@@ -93,19 +93,15 @@ namespace XboxToolkit
                     baseSector = magicSector - Constants.XGD_ISO_BASE_SECTOR;
                 }
 
-                // Scan folder structure
-                var fileEntries = new List<FileEntry>();
-                var directoryEntries = new List<DirectoryEntry>();
-                ContainerBuilderHelper.ScanFolder(inputFolder, string.Empty, fileEntries, directoryEntries);
+                // Build directory tree structure and calculate sizes in one pass
+                var directorySizes = new Dictionary<string, uint>();
+                var rootDirectory = ContainerBuilderHelper.BuildDirectoryTree(inputFolder, string.Empty, directorySizes, Constants.XGD_SECTOR_SIZE);
 
                 progress?.Invoke(0.1f);
 
-                // Build directory tree structure
-                var rootDirectory = ContainerBuilderHelper.BuildDirectoryTree(directoryEntries, fileEntries, string.Empty);
-                
-                // Calculate directory sizes
-                var directorySizes = new Dictionary<string, uint>();
-                ContainerBuilderHelper.CalculateDirectorySizes(rootDirectory, directorySizes, Constants.XGD_SECTOR_SIZE);
+                // Collect all file entries from the tree for sector allocation
+                var fileEntries = new List<FileEntry>();
+                ContainerBuilderHelper.CollectFileEntries(rootDirectory, fileEntries);
 
                 progress?.Invoke(0.2f);
 
@@ -124,10 +120,9 @@ namespace XboxToolkit
                 ContainerBuilderHelper.AllocateDirectorySectors(rootDirectory, directorySizes, sectorAllocator, baseSector);
                 
                 // Allocate sectors for files - try to fill space between base and magic sector first, then after directories
-                // Sort files by size (largest first) to better fill sectors
-                var sortedFiles = fileEntries.OrderByDescending(f => f.Size).ToList();
+                // Process files in directory tree order (matching xdvdfs behavior)
                 uint totalFileSectorsAllocated = 0;
-                foreach (var fileEntry in sortedFiles)
+                foreach (var fileEntry in fileEntries)
                 {
                     var fileSectors = Helpers.RoundToMultiple(fileEntry.Size, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
                     var allocatedSector = sectorAllocator.AllocateFileSectors(fileSectors);
@@ -227,7 +222,7 @@ namespace XboxToolkit
                             {
                                 // Scrubbed sector before base (0xFF filled)
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                Helpers.FillArray(sectorToWrite, (byte)0xff);
+                                Helpers.FillArray(sectorToWrite, (byte)0x00);
                             }
                             else if (sectorMap.ContainsKey(currentSector))
                             {
@@ -239,7 +234,7 @@ namespace XboxToolkit
                             {
                                 // Scrubbed sector (0xFF filled)
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                Helpers.FillArray(sectorToWrite, (byte)0xff);
+                                Helpers.FillArray(sectorToWrite, (byte)0x00);
                             }
 
                             outputWriter.Write(sectorToWrite);
@@ -249,6 +244,7 @@ namespace XboxToolkit
                             var currentProgress = 0.6f + 0.4f * (currentSector / (float)totalSectors);
                             progress?.Invoke(currentProgress);
                         }
+
                     }
 
                     if (splitting || iteration > 0)
@@ -302,22 +298,30 @@ namespace XboxToolkit
                     baseSector = magicSector - Constants.XGD_ISO_BASE_SECTOR;
                 }
 
-                // Scan folder structure
-                var fileEntries = new List<FileEntry>();
-                var directoryEntries = new List<DirectoryEntry>();
-                ContainerBuilderHelper.ScanFolder(inputFolder, string.Empty, fileEntries, directoryEntries);
+                // Build directory tree structure and calculate sizes in one pass
+                var directorySizes = new Dictionary<string, uint>();
+                var rootDirectory = ContainerBuilderHelper.BuildDirectoryTree(inputFolder, string.Empty, directorySizes, Constants.XGD_SECTOR_SIZE);
 
                 progress?.Invoke(0.1f);
 
-                // Build directory tree structure
-                var rootDirectory = ContainerBuilderHelper.BuildDirectoryTree(directoryEntries, fileEntries, string.Empty);
+                // Collect all file entries from the tree for sector allocation
+                var fileEntries = new List<FileEntry>();
+                ContainerBuilderHelper.CollectFileEntries(rootDirectory, fileEntries);
                 
-                // Calculate directory sizes
-                var directorySizes = new Dictionary<string, uint>();
-                ContainerBuilderHelper.CalculateDirectorySizes(rootDirectory, directorySizes, Constants.XGD_SECTOR_SIZE);
+                // Sort files by directory path, then filename
+                fileEntries.Sort((a, b) =>
+                {
+                    var dirA = Path.GetDirectoryName(a.RelativePath)?.Replace('\\', '/') ?? string.Empty;
+                    var dirB = Path.GetDirectoryName(b.RelativePath)?.Replace('\\', '/') ?? string.Empty;
+                    var dirCompare = string.Compare(dirA, dirB, StringComparison.OrdinalIgnoreCase);
+                    if (dirCompare != 0) return dirCompare;
+                    var fileA = Path.GetFileName(a.RelativePath);
+                    var fileB = Path.GetFileName(b.RelativePath);
+                    return string.Compare(fileA, fileB, StringComparison.OrdinalIgnoreCase);
+                });
 
                 progress?.Invoke(0.2f);
-
+                
                 // Allocate sectors efficiently - maximize usage between magic sector and directory tables
                 var sectorAllocator = new SectorAllocator(magicSector, baseSector);
                 
@@ -333,10 +337,8 @@ namespace XboxToolkit
                 ContainerBuilderHelper.AllocateDirectorySectors(rootDirectory, directorySizes, sectorAllocator, baseSector);
                 
                 // Allocate sectors for files - try to fill space between base and magic sector first, then after directories
-                // Sort files by size (largest first) to better fill sectors
-                var sortedFiles = fileEntries.OrderByDescending(f => f.Size).ToList();
                 uint totalFileSectorsAllocated = 0;
-                foreach (var fileEntry in sortedFiles)
+                foreach (var fileEntry in fileEntries)
                 {
                     var fileSectors = Helpers.RoundToMultiple(fileEntry.Size, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
                     var allocatedSector = sectorAllocator.AllocateFileSectors(fileSectors);
@@ -459,7 +461,7 @@ namespace XboxToolkit
                             {
                                 // Scrubbed sector before base (0xFF filled)
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                Helpers.FillArray(sectorToWrite, (byte)0xff);
+                                Helpers.FillArray(sectorToWrite, (byte)0x00);
                             }
                             else if (sectorMap.ContainsKey(currentSector))
                             {
@@ -470,7 +472,7 @@ namespace XboxToolkit
                             {
                                 // Scrubbed sector (0xFF filled)
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                Helpers.FillArray(sectorToWrite, (byte)0xff);
+                                Helpers.FillArray(sectorToWrite, (byte)0x00);
                             }
 
                             // Try to compress the sector
@@ -567,7 +569,7 @@ namespace XboxToolkit
             var scrubbedSector = new byte[2048];
             for (var i = 0; i < scrubbedSector.Length; i++)
             {
-                scrubbedSector[i] = 0xff;
+                scrubbedSector[i] = 0x00;
             }
 
             var decoder = containerReader.GetDecoder();
@@ -663,7 +665,7 @@ namespace XboxToolkit
             var scrubbedSector = new byte[Constants.XGD_SECTOR_SIZE];
             for (var i = 0; i < scrubbedSector.Length; i++)
             {
-                scrubbedSector[i] = 0xff;
+                scrubbedSector[i] = 0x00;
             }
 
             var decoder = containerReader.GetDecoder();
