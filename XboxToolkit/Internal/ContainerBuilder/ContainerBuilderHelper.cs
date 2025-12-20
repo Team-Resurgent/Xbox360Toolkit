@@ -97,16 +97,27 @@ namespace XboxToolkit.Internal.ContainerBuilder
 
                 // Each entry is: left(2) + right(2) + sector(4) + size(4) + attribute(1) + nameLength(1) + filename
                 // Entries must be 4-byte aligned (padded to 4-byte boundary)
+                // If entry would cross sector boundary, pad current size to sector boundary first (matches extract-xiso)
                 foreach (var entry in entries)
                 {
                     var nameBytes = Encoding.ASCII.GetBytes(entry.name);
                     var entryDataSize = 2 + 2 + 4 + 4 + 1 + 1 + (uint)nameBytes.Length;
                     var entrySize = (entryDataSize + 3) & ~3u; // Round up to 4-byte boundary
+                    
+                    // Check if adding this entry would cross a sector boundary
+                    var sectorsBefore = totalSize / sectorSize;
+                    var sectorsAfter = (totalSize + entrySize) / sectorSize;
+                    if (sectorsAfter > sectorsBefore)
+                    {
+                        // Entry crosses sector boundary, pad current size to sector boundary first
+                        totalSize = Helpers.RoundToMultiple(totalSize, sectorSize);
+                    }
+                    
                     totalSize += entrySize;
                 }
 
-                // Round up to sector size
-                totalSize = Helpers.RoundToMultiple(totalSize, sectorSize);
+                // Store raw directory size (not rounded to sector) - matches extract-xiso behavior
+                // Padding to sector boundary will be added when writing directory entry
                 directorySizes[dir.Path] = totalSize;
             }
 
@@ -185,20 +196,24 @@ namespace XboxToolkit.Internal.ContainerBuilder
                 }
                 
                 // Add subdirectory to entries - even if it's empty, it should still be in the parent's entry list
-                // Empty directories will have size = sector size (minimum), and their directory data will be all zeros
-                entries.Add((true, dirName, subdir.Sector, directorySizes[subdir.Path], subdir.Path));
+                // For directories, file_size in entry = directory_size + padding to sector boundary (matches extract-xiso)
+                var subdirSize = directorySizes[subdir.Path];
+                var subdirSizeWithPadding = subdirSize + (Constants.XGD_SECTOR_SIZE - (subdirSize % Constants.XGD_SECTOR_SIZE)) % Constants.XGD_SECTOR_SIZE;
+                entries.Add((true, dirName, subdir.Sector, subdirSizeWithPadding, subdir.Path));
             }
 
             // Sort entries by name for binary tree
             entries.Sort((a, b) => string.Compare(a.name, b.name, StringComparison.OrdinalIgnoreCase));
 
             // Build binary tree structure
+            // Directory size is stored raw, but we need to round to sector boundary for the actual data buffer
             var dirSize = directorySizes[directory.Path];
-            var dirData = new byte[dirSize];
-            // Initialize to zeros to ensure uninitialized data doesn't cause issues
+            var dirSizeRounded = Helpers.RoundToMultiple(dirSize, Constants.XGD_SECTOR_SIZE);
+            var dirData = new byte[dirSizeRounded];
+            // Initialize to 0xFF padding (matches extract-xiso XISO_PAD_BYTE)
             for (int i = 0; i < dirData.Length; i++)
             {
-                dirData[i] = 0;
+                dirData[i] = Constants.XISO_PAD_BYTE;
             }
             var offset = 0u;
 
@@ -243,8 +258,9 @@ namespace XboxToolkit.Internal.ContainerBuilder
             offset += entrySize;
 
             // Calculate where children will be written (offsets are in 4-byte units)
-            ushort leftOffset = 0xFFFF;
-            ushort rightOffset = 0xFFFF;
+            // Use 0 for no children (matches extract-xiso.c line 1853-1854), not 0xFFFF (which is padding)
+            ushort leftOffset = 0;
+            ushort rightOffset = 0;
 
             if (start < mid)
             {
@@ -269,15 +285,20 @@ namespace XboxToolkit.Internal.ContainerBuilder
                 writer.Write(rightOffset);
                 writer.Write(entry.sector);
                 writer.Write(entry.size);
-                writer.Write((byte)(entry.isDir ? 0x10 : 0x00));
+                writer.Write((byte)(entry.isDir ? 0x10 : 0x20)); // 0x10 for dir, 0x20 for file (XISO_ATTRIBUTE_ARC)
                 writer.Write((byte)nameBytes.Length);
                 writer.Write(nameBytes);
                 
-                // Pad to 4-byte boundary
+                // Pad to 4-byte boundary with 0xFF (matches extract-xiso)
                 var padding = entrySize - entryDataSize;
                 if (padding > 0)
                 {
-                    writer.Write(new byte[padding]);
+                    var paddingBytes = new byte[padding];
+                    for (int i = 0; i < padding; i++)
+                    {
+                        paddingBytes[i] = Constants.XISO_PAD_BYTE;
+                    }
+                    writer.Write(paddingBytes);
                 }
             }
         }

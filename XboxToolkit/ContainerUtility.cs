@@ -81,16 +81,20 @@ namespace XboxToolkit
                 // Determine magic sector based on format
                 uint magicSector;
                 uint baseSector;
+                uint rootDirSector;
                 if (isoFormat == ISOFormat.XboxOriginal)
                 {
                     magicSector = Constants.XGD_ISO_BASE_SECTOR;
                     baseSector = 0;
+                    // For Xbox Original, root directory is always at sector 0x108 (matches extract-xiso)
+                    rootDirSector = Constants.XISO_ROOT_DIRECTORY_SECTOR;
                 }
                 else // Xbox360
                 {
                     // Use XGD3 as default (most common)
                     magicSector = Constants.XGD_MAGIC_SECTOR_XGD3;
                     baseSector = magicSector - Constants.XGD_ISO_BASE_SECTOR;
+                    rootDirSector = 0; // Will be allocated
                 }
 
                 // Build directory tree structure and calculate sizes in one pass
@@ -108,13 +112,25 @@ namespace XboxToolkit
                 // Allocate sectors efficiently - maximize usage between magic sector and directory tables
                 var sectorAllocator = new SectorAllocator(magicSector, baseSector);
                 
-                // Allocate directories FIRST (they need to be in a known location after magic sector)
+                // Allocate root directory
+                // Directory size is stored raw (matches extract-xiso), round to sector boundary for allocation
                 var rootDirSize = directorySizes[string.Empty];
-                var rootDirSectors = Helpers.RoundToMultiple(rootDirSize, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
-                var rootDirSector = sectorAllocator.AllocateDirectorySectors(rootDirSectors);
+                var rootDirSizeRounded = Helpers.RoundToMultiple(rootDirSize, Constants.XGD_SECTOR_SIZE);
+                var rootDirSectors = rootDirSizeRounded / Constants.XGD_SECTOR_SIZE;
                 
-                // Set root directory sector (relative to baseSector)
-                rootDirectory.Sector = rootDirSector - baseSector;
+                if (isoFormat == ISOFormat.XboxOriginal)
+                {
+                    // Root directory is fixed at 0x108 for Xbox Original (matches extract-xiso)
+                    rootDirectory.Sector = rootDirSector - baseSector;
+                    // Mark root directory as fixed so allocator skips it
+                    sectorAllocator.SetFixedRootDirectory(rootDirSector, rootDirSectors);
+                }
+                else
+                {
+                    // For Xbox360, allocate root directory after magic sector
+                    rootDirSector = sectorAllocator.AllocateDirectorySectors(rootDirSectors);
+                    rootDirectory.Sector = rootDirSector - baseSector;
+                }
 
                 // Allocate sectors for all subdirectories
                 ContainerBuilderHelper.AllocateDirectorySectors(rootDirectory, directorySizes, sectorAllocator, baseSector);
@@ -139,15 +155,24 @@ namespace XboxToolkit
                 progress?.Invoke(0.6f);
 
                 // Write ISO
-                // Calculate total sectors needed - must be at least magicSector + 1, and include all allocated sectors
-                var allocatedSectors = sectorAllocator.GetTotalSectors();
-                var totalSectors = Math.Max(allocatedSectors, magicSector + 1);
+                // Note: extract-xiso doesn't pre-calculate total sectors - it writes everything
+                // then calculates from final file position. We'll do the same: write all allocated
+                // sectors, then pad, then calculate total sectors from final position.
                 
+                // Get allocated sectors - this is the next available sector after all allocations
+                var allocatedSectors = sectorAllocator.GetTotalSectors();
                 
                 var iteration = 0;
                 var currentSector = 0u;
+                
+                // We'll determine the actual max sector after building the sector map
+                // Start with a reasonable estimate
+                uint maxSectorToWrite = Math.Max(allocatedSectors, magicSector);
+                
+                // Track if we've written all sectors
+                bool allSectorsWritten = false;
 
-                while (currentSector < totalSectors)
+                while (!allSectorsWritten)
                 {
                     var splitting = false;
                     using (var outputStream = new FileStream(outputFile, FileMode.Create, FileAccess.Write))
@@ -156,8 +181,23 @@ namespace XboxToolkit
                         // Build sector map for directory tables and files
                         var sectorMap = new Dictionary<uint, byte[]>();
                         
-                        // Add directory sectors to map
-                        foreach (var dir in directoryData)
+                        // Verify root directory is in directoryData
+                        if (!directoryData.ContainsKey(string.Empty))
+                        {
+                            throw new InvalidOperationException("Root directory data is missing from directoryData! Cannot build ISO.");
+                        }
+                        
+                        var rootDirData = directoryData[string.Empty];
+                        if (rootDirData == null || rootDirData.Length == 0)
+                        {
+                            throw new InvalidOperationException("Root directory data is null or empty! Cannot build ISO.");
+                        }
+                        
+                        // Add directory sectors to map - process root directory first to ensure it's not overwritten
+                        // Sort to process root directory (string.Empty) first
+                        var sortedDirectories = directoryData.OrderBy(d => d.Key == string.Empty ? 0 : 1).ToList();
+                        
+                        foreach (var dir in sortedDirectories)
                         {
                             var dirSectors = Helpers.RoundToMultiple((uint)dir.Value.Length, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
                             var dirSector = dir.Key == string.Empty ? rootDirSector : ContainerBuilderHelper.GetDirectorySector(dir.Key, rootDirectory, baseSector);
@@ -166,12 +206,31 @@ namespace XboxToolkit
                             {
                                 var sectorIndex = dirSector + i;
                                 var offset = (int)(i * Constants.XGD_SECTOR_SIZE);
-                                var length = Math.Min(Constants.XGD_SECTOR_SIZE, dir.Value.Length - offset);
+                                var length = (int)Math.Min(Constants.XGD_SECTOR_SIZE, (uint)(dir.Value.Length - offset));
                                 var sectorData = new byte[Constants.XGD_SECTOR_SIZE];
                                 if (length > 0)
                                 {
                                     Array.Copy(dir.Value, offset, sectorData, 0, length);
+                                    // Fill remaining with 0xFF padding
+                                    var sectorSizeInt = (int)Constants.XGD_SECTOR_SIZE;
+                                    if (length < sectorSizeInt)
+                                    {
+                                        var paddingNeeded = sectorSizeInt - length;
+                                        Helpers.FillArray(sectorData, Constants.XISO_PAD_BYTE, length, paddingNeeded);
+                                    }
                                 }
+                                else
+                                {
+                                    // If no data, fill with 0xFF padding
+                                    Helpers.FillArray(sectorData, Constants.XISO_PAD_BYTE);
+                                }
+                                
+                                // Ensure we don't overwrite existing directory data
+                                if (sectorMap.ContainsKey(sectorIndex))
+                                {
+                                    throw new InvalidOperationException($"Directory sector {sectorIndex} (path: '{dir.Key}') is already in sector map! This indicates duplicate directory entries.");
+                                }
+                                
                                 sectorMap[sectorIndex] = sectorData;
                             }
                         }
@@ -182,26 +241,70 @@ namespace XboxToolkit
                             var fileSector = fileEntry.Sector + baseSector;
                             var fileSectors = Helpers.RoundToMultiple(fileEntry.Size, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
                             
+                            // Check if file overlaps with root directory (shouldn't happen, but be safe)
+                            if (isoFormat == ISOFormat.XboxOriginal && fileSector >= rootDirSector && fileSector < rootDirSector + rootDirSectors)
+                            {
+                                throw new InvalidOperationException($"File {fileEntry.FullPath} is allocated at sector {fileSector}, which overlaps with root directory at sector {rootDirSector}!");
+                            }
+                            
                             using (var fileStream = File.OpenRead(fileEntry.FullPath))
                             {
                                 for (var i = 0u; i < fileSectors; i++)
                                 {
                                     var sectorIndex = fileSector + i;
+                                    
+                                    // Don't overwrite directory sectors - this should never happen if allocation is correct
+                                    if (sectorMap.ContainsKey(sectorIndex))
+                                    {
+                                        throw new InvalidOperationException($"File sector {sectorIndex} (from {fileEntry.FullPath}) conflicts with directory sector! This indicates a bug in sector allocation.");
+                                    }
+                                    
                                     var sectorData = new byte[Constants.XGD_SECTOR_SIZE];
                                     var bytesRead = fileStream.Read(sectorData, 0, (int)Constants.XGD_SECTOR_SIZE);
                                     if (bytesRead < Constants.XGD_SECTOR_SIZE)
                                     {
-                                        Helpers.FillArray(sectorData, (byte)0, bytesRead, (int)(Constants.XGD_SECTOR_SIZE - bytesRead));
+                                        // Pad file to sector boundary with 0xFF (matches extract-xiso)
+                                        Helpers.FillArray(sectorData, Constants.XISO_PAD_BYTE, bytesRead, (int)(Constants.XGD_SECTOR_SIZE - bytesRead));
                                     }
                                     sectorMap[sectorIndex] = sectorData;
                                 }
                             }
                         }
 
-                        // Write all sectors in order from 0 to totalSectors
+                        // Find the actual maximum sector that has data (from sector map, magic sector, or allocated sectors)
+                        // GetTotalSectors() returns the next available sector, so last sector with data is GetTotalSectors() - 1
+                        // But we need to include all sectors up to and including the last sector with data
+                        uint actualMaxSector = 0;
+                        if (sectorMap.Count > 0)
+                        {
+                            actualMaxSector = sectorMap.Keys.Max();
+                        }
+                        actualMaxSector = Math.Max(actualMaxSector, magicSector);
+                        // GetTotalSectors() returns the next available sector after all allocations
+                        // This means if it returns N, sectors 0 to N-1 have been allocated
+                        // We need to write all allocated sectors, so we should write up to N-1 (inclusive)
+                        // But we also need to account for the magic sector which might be higher
+                        // extract-xiso writes everything and then calculates from final position
+                        // So we should write all sectors up to the maximum, ensuring we don't miss any
+                        if (allocatedSectors > 0)
+                        {
+                            // Write up to allocatedSectors to ensure we write all allocated sectors
+                            // allocatedSectors is the next available, so we write 0 to allocatedSectors (inclusive)
+                            // This ensures we write all allocated sectors plus one scrubbed sector if needed
+                            actualMaxSector = Math.Max(actualMaxSector, allocatedSectors);
+                        }
+                        
+                        // Don't add extra buffer - write exactly what's needed
+                        // The actualMaxSector should be the maximum of:
+                        // - The maximum sector in the sector map (files and directories)
+                        // - The magic sector
+                        // - The allocated sectors (next available sector - 1 for last sector with data)
+
+                        // Write all sectors in order from 0 to actualMaxSector (inclusive)
+                        // This ensures we write all sectors with data plus any needed scrubbed sectors
                         uint sectorsWritten = 0;
                         uint sectorsWithData = 0;
-                        while (currentSector < totalSectors)
+                        while (currentSector <= actualMaxSector)
                         {
                             var estimatedSize = outputStream.Position + Constants.XGD_SECTOR_SIZE;
                             if (splitPoint > 0 && estimatedSize > splitPoint)
@@ -220,7 +323,25 @@ namespace XboxToolkit
                             }
                             else if (currentSector < baseSector)
                             {
-                                // Scrubbed sector before base (0xFF filled)
+                                // Sectors before base - extract-xiso writes zeros (0x00) for XISO_HEADER_OFFSET (0x10000 bytes = 32 sectors)
+                                sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
+                                var headerOffsetSectors = Constants.XISO_FILE_MODULUS / Constants.XGD_SECTOR_SIZE; // 32 sectors
+                                if (currentSector < headerOffsetSectors)
+                                {
+                                    // First 32 sectors (0x10000 bytes) are zeros (matches extract-xiso line 1017-1018)
+                                    Helpers.FillArray(sectorToWrite, (byte)0x00);
+                                }
+                                else
+                                {
+                                    // Rest before base are 0xFF
+                                    Helpers.FillArray(sectorToWrite, Constants.XISO_PAD_BYTE);
+                                }
+                            }
+                            else if (isoFormat == ISOFormat.XboxOriginal && currentSector < Constants.XISO_FILE_MODULUS / Constants.XGD_SECTOR_SIZE)
+                            {
+                                // For Xbox Original, baseSector is 0, so we need to handle first 32 sectors separately
+                                // extract-xiso writes zeros (0x00) for XISO_HEADER_OFFSET (0x10000 bytes = 32 sectors)
+                                // But the optimized tag at offset 31337 is written later, so we'll leave it as zeros for now
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
                                 Helpers.FillArray(sectorToWrite, (byte)0x00);
                             }
@@ -234,15 +355,62 @@ namespace XboxToolkit
                             {
                                 // Scrubbed sector (0xFF filled)
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                Helpers.FillArray(sectorToWrite, (byte)0x00);
+                                Helpers.FillArray(sectorToWrite, Constants.XISO_PAD_BYTE);
                             }
 
                             outputWriter.Write(sectorToWrite);
                             currentSector++;
                             sectorsWritten++;
 
-                            var currentProgress = 0.6f + 0.4f * (currentSector / (float)totalSectors);
+                            var currentProgress = 0.6f + 0.4f * (currentSector / (float)(actualMaxSector + 1));
                             progress?.Invoke(currentProgress);
+                        }
+                        
+                        // Mark that we've written all sectors
+                        if (currentSector > actualMaxSector)
+                        {
+                            allSectorsWritten = true;
+                        }
+
+                        // After writing all sectors, for Xbox Original format (matches extract-xiso):
+                        // 1. Pad to 0x10000 boundary
+                        // 2. Calculate total sectors from final file size
+                        // 3. Write volume descriptors at sector 0x10 (offset 0x8000)
+                        // 4. Write optimized tag at offset 31337
+                        if (isoFormat == ISOFormat.XboxOriginal && !splitting)
+                        {
+                            // First, pad to 0x10000 boundary (matches extract-xiso line 1062)
+                            var currentPos = outputStream.Position;
+                            var paddingNeeded = (int)((Constants.XISO_FILE_MODULUS - currentPos % Constants.XISO_FILE_MODULUS) % Constants.XISO_FILE_MODULUS);
+                            if (paddingNeeded > 0)
+                            {
+                                var padding = new byte[paddingNeeded];
+                                Helpers.FillArray(padding, Constants.XISO_PAD_BYTE);
+                                outputWriter.Write(padding);
+                            }
+                            
+                            // Calculate total sectors after padding (matches extract-xiso line 1064)
+                            // This is: (position_after_padding) / XISO_SECTOR_SIZE
+                            var finalPos = outputStream.Position;
+                            var totalSectorsAfterPadding = (uint)(finalPos / Constants.XGD_SECTOR_SIZE);
+                            
+                            // Write volume descriptors at sector 0x10 (offset 0x8000) - matches extract-xiso line 1064
+                            WriteVolumeDescriptors(outputStream, totalSectorsAfterPadding);
+                            
+                            // Write optimized tag at offset 31337 - matches extract-xiso line 1066-1067
+                            // The tag is written at byte offset 31337, which is within the first 32 sectors (0x10000 bytes)
+                            // extract-xiso writes this after padding, overwriting the zeros we wrote earlier
+                            // extract-xiso writes: "in!xiso!" + version string "2.7.1 (01.11.14)" (8 + 16 = 24 bytes total)
+                            var currentPosBeforeTag = outputStream.Position;
+                            outputStream.Seek(Constants.XISO_OPTIMIZED_TAG_OFFSET, SeekOrigin.Begin);
+                            var tagBytes = Encoding.ASCII.GetBytes(Constants.XISO_OPTIMIZED_TAG);
+                            outputWriter.Write(tagBytes);
+                            // Write version string "2.7.1 (01.11.14)" (16 bytes) - matches extract-xiso
+                            var versionString = "2.7.1 (01.11.14)";
+                            var versionBytes = Encoding.ASCII.GetBytes(versionString);
+                            outputWriter.Write(versionBytes);
+                            // Restore position after writing tag
+                            outputStream.Seek(currentPosBeforeTag, SeekOrigin.Begin);
                         }
 
                     }
@@ -270,6 +438,58 @@ namespace XboxToolkit
             }
         }
 
+        /// <summary>
+        /// Writes ECMA-119 volume descriptors at sector 0x10 (offset 0x8000) - matches extract-xiso write_volume_descriptors.
+        /// </summary>
+        private static void WriteVolumeDescriptors(Stream stream, uint totalSectors)
+        {
+            // Convert total sectors to big-endian and little-endian
+            var little = totalSectors; // Little-endian (native on Windows)
+            var bigBytes = BitConverter.GetBytes(totalSectors);
+            Array.Reverse(bigBytes);
+            var big = BitConverter.ToUInt32(bigBytes, 0); // Big-endian
+            
+            var date = "0000000000000000";
+            var spacesSize = (int)(Constants.ECMA_119_VOLUME_CREATION_DATE - Constants.ECMA_119_VOLUME_SET_IDENTIFIER);
+            var spaces = new byte[spacesSize];
+            Helpers.FillArray(spaces, (byte)0x20); // Space character
+            
+            // Write primary volume descriptor at ECMA_119_DATA_AREA_START (sector 0x10, offset 0x8000)
+            stream.Seek(Constants.ECMA_119_DATA_AREA_START, SeekOrigin.Begin);
+            stream.Write(new byte[] { 0x01 }, 0, 1); // Volume descriptor type
+            stream.Write(Encoding.ASCII.GetBytes("CD001"), 0, 5); // Standard identifier
+            stream.Write(new byte[] { 0x01 }, 0, 1); // Volume descriptor version
+            
+            // Write volume space size (little-endian then big-endian)
+            stream.Seek(Constants.ECMA_119_VOLUME_SPACE_SIZE, SeekOrigin.Begin);
+            stream.Write(BitConverter.GetBytes(little), 0, 4);
+            stream.Write(BitConverter.GetBytes(big), 0, 4);
+            
+            // Write volume set size
+            stream.Seek(Constants.ECMA_119_VOLUME_SET_SIZE, SeekOrigin.Begin);
+            stream.Write(new byte[] { 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x08, 0x08, 0x00 }, 0, 12);
+            
+            // Write volume set identifier (spaces)
+            stream.Seek(Constants.ECMA_119_VOLUME_SET_IDENTIFIER, SeekOrigin.Begin);
+            stream.Write(spaces, 0, spacesSize);
+            
+            // Write dates (4 times)
+            var dateBytes = Encoding.ASCII.GetBytes(date);
+            stream.Write(dateBytes, 0, dateBytes.Length);
+            stream.Write(dateBytes, 0, dateBytes.Length);
+            stream.Write(dateBytes, 0, dateBytes.Length);
+            stream.Write(dateBytes, 0, dateBytes.Length);
+            
+            // Write file structure version
+            stream.Write(new byte[] { 0x01 }, 0, 1);
+            
+            // Write terminator volume descriptor at next sector
+            stream.Seek(Constants.ECMA_119_DATA_AREA_START + Constants.XGD_SECTOR_SIZE, SeekOrigin.Begin);
+            stream.Write(new byte[] { 0xFF }, 0, 1); // Volume descriptor type (terminator)
+            stream.Write(Encoding.ASCII.GetBytes("CD001"), 0, 5); // Standard identifier
+            stream.Write(new byte[] { 0x01 }, 0, 1); // Volume descriptor version
+        }
+
         public static bool ConvertFolderToCCI(string inputFolder, ISOFormat format, string outputFile, long splitPoint, Action<float>? progress)
         {
             try
@@ -286,16 +506,20 @@ namespace XboxToolkit
                 // Determine magic sector based on format
                 uint magicSector;
                 uint baseSector;
+                uint rootDirSector;
                 if (isoFormat == ISOFormat.XboxOriginal)
                 {
                     magicSector = Constants.XGD_ISO_BASE_SECTOR;
                     baseSector = 0;
+                    // For Xbox Original, root directory is always at sector 0x108 (matches extract-xiso)
+                    rootDirSector = Constants.XISO_ROOT_DIRECTORY_SECTOR;
                 }
                 else // Xbox360
                 {
                     // Use XGD3 as default (most common)
                     magicSector = Constants.XGD_MAGIC_SECTOR_XGD3;
                     baseSector = magicSector - Constants.XGD_ISO_BASE_SECTOR;
+                    rootDirSector = 0; // Will be allocated
                 }
 
                 // Build directory tree structure and calculate sizes in one pass
@@ -325,13 +549,25 @@ namespace XboxToolkit
                 // Allocate sectors efficiently - maximize usage between magic sector and directory tables
                 var sectorAllocator = new SectorAllocator(magicSector, baseSector);
                 
-                // Allocate directories FIRST (they need to be in a known location after magic sector)
+                // Allocate root directory
+                // Directory size is stored raw (matches extract-xiso), round to sector boundary for allocation
                 var rootDirSize = directorySizes[string.Empty];
-                var rootDirSectors = Helpers.RoundToMultiple(rootDirSize, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
-                var rootDirSector = sectorAllocator.AllocateDirectorySectors(rootDirSectors);
+                var rootDirSizeRounded = Helpers.RoundToMultiple(rootDirSize, Constants.XGD_SECTOR_SIZE);
+                var rootDirSectors = rootDirSizeRounded / Constants.XGD_SECTOR_SIZE;
                 
-                // Set root directory sector (relative to baseSector)
-                rootDirectory.Sector = rootDirSector - baseSector;
+                if (isoFormat == ISOFormat.XboxOriginal)
+                {
+                    // Root directory is fixed at 0x108 for Xbox Original (matches extract-xiso)
+                    rootDirectory.Sector = rootDirSector - baseSector;
+                    // Mark root directory as fixed so allocator skips it
+                    sectorAllocator.SetFixedRootDirectory(rootDirSector, rootDirSectors);
+                }
+                else
+                {
+                    // For Xbox360, allocate root directory after magic sector
+                    rootDirSector = sectorAllocator.AllocateDirectorySectors(rootDirSectors);
+                    rootDirectory.Sector = rootDirSector - baseSector;
+                }
 
                 // Allocate sectors for all subdirectories
                 ContainerBuilderHelper.AllocateDirectorySectors(rootDirectory, directorySizes, sectorAllocator, baseSector);
@@ -373,8 +609,23 @@ namespace XboxToolkit
                         // Build sector map for directory tables and files
                         var sectorMap = new Dictionary<uint, byte[]>();
                         
-                        // Add directory sectors to map
-                        foreach (var dir in directoryData)
+                        // Verify root directory is in directoryData
+                        if (!directoryData.ContainsKey(string.Empty))
+                        {
+                            throw new InvalidOperationException("Root directory data is missing from directoryData! Cannot build ISO.");
+                        }
+                        
+                        var rootDirData = directoryData[string.Empty];
+                        if (rootDirData == null || rootDirData.Length == 0)
+                        {
+                            throw new InvalidOperationException("Root directory data is null or empty! Cannot build ISO.");
+                        }
+                        
+                        // Add directory sectors to map - process root directory first to ensure it's not overwritten
+                        // Sort to process root directory (string.Empty) first
+                        var sortedDirectories = directoryData.OrderBy(d => d.Key == string.Empty ? 0 : 1).ToList();
+                        
+                        foreach (var dir in sortedDirectories)
                         {
                             var dirSectors = Helpers.RoundToMultiple((uint)dir.Value.Length, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
                             var dirSector = dir.Key == string.Empty ? rootDirSector : ContainerBuilderHelper.GetDirectorySector(dir.Key, rootDirectory, baseSector);
@@ -383,12 +634,31 @@ namespace XboxToolkit
                             {
                                 var sectorIndex = dirSector + i;
                                 var offset = (int)(i * Constants.XGD_SECTOR_SIZE);
-                                var length = Math.Min(Constants.XGD_SECTOR_SIZE, dir.Value.Length - offset);
+                                var length = (int)Math.Min(Constants.XGD_SECTOR_SIZE, (uint)(dir.Value.Length - offset));
                                 var sectorData = new byte[Constants.XGD_SECTOR_SIZE];
                                 if (length > 0)
                                 {
                                     Array.Copy(dir.Value, offset, sectorData, 0, length);
+                                    // Fill remaining with 0xFF padding
+                                    var sectorSizeInt = (int)Constants.XGD_SECTOR_SIZE;
+                                    if (length < sectorSizeInt)
+                                    {
+                                        var paddingNeeded = sectorSizeInt - length;
+                                        Helpers.FillArray(sectorData, Constants.XISO_PAD_BYTE, length, paddingNeeded);
+                                    }
                                 }
+                                else
+                                {
+                                    // If no data, fill with 0xFF padding
+                                    Helpers.FillArray(sectorData, Constants.XISO_PAD_BYTE);
+                                }
+                                
+                                // Ensure we don't overwrite existing directory data
+                                if (sectorMap.ContainsKey(sectorIndex))
+                                {
+                                    throw new InvalidOperationException($"Directory sector {sectorIndex} (path: '{dir.Key}') is already in sector map! This indicates duplicate directory entries.");
+                                }
+                                
                                 sectorMap[sectorIndex] = sectorData;
                             }
                         }
@@ -399,16 +669,30 @@ namespace XboxToolkit
                             var fileSector = fileEntry.Sector + baseSector;
                             var fileSectors = Helpers.RoundToMultiple(fileEntry.Size, Constants.XGD_SECTOR_SIZE) / Constants.XGD_SECTOR_SIZE;
                             
+                            // Check if file overlaps with root directory (shouldn't happen, but be safe)
+                            if (isoFormat == ISOFormat.XboxOriginal && fileSector >= rootDirSector && fileSector < rootDirSector + rootDirSectors)
+                            {
+                                throw new InvalidOperationException($"File {fileEntry.FullPath} is allocated at sector {fileSector}, which overlaps with root directory at sector {rootDirSector}!");
+                            }
+                            
                             using (var fileStream = File.OpenRead(fileEntry.FullPath))
                             {
                                 for (var i = 0u; i < fileSectors; i++)
                                 {
                                     var sectorIndex = fileSector + i;
+                                    
+                                    // Don't overwrite directory sectors - this should never happen if allocation is correct
+                                    if (sectorMap.ContainsKey(sectorIndex))
+                                    {
+                                        throw new InvalidOperationException($"File sector {sectorIndex} (from {fileEntry.FullPath}) conflicts with directory sector! This indicates a bug in sector allocation.");
+                                    }
+                                    
                                     var sectorData = new byte[Constants.XGD_SECTOR_SIZE];
                                     var bytesRead = fileStream.Read(sectorData, 0, (int)Constants.XGD_SECTOR_SIZE);
                                     if (bytesRead < Constants.XGD_SECTOR_SIZE)
                                     {
-                                        Helpers.FillArray(sectorData, (byte)0, bytesRead, (int)(Constants.XGD_SECTOR_SIZE - bytesRead));
+                                        // Pad file to sector boundary with 0xFF (matches extract-xiso)
+                                        Helpers.FillArray(sectorData, Constants.XISO_PAD_BYTE, bytesRead, (int)(Constants.XGD_SECTOR_SIZE - bytesRead));
                                     }
                                     sectorMap[sectorIndex] = sectorData;
                                 }
@@ -461,7 +745,7 @@ namespace XboxToolkit
                             {
                                 // Scrubbed sector before base (0xFF filled)
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                Helpers.FillArray(sectorToWrite, (byte)0x00);
+                                Helpers.FillArray(sectorToWrite, Constants.XISO_PAD_BYTE);
                             }
                             else if (sectorMap.ContainsKey(currentSector))
                             {
@@ -472,7 +756,7 @@ namespace XboxToolkit
                             {
                                 // Scrubbed sector (0xFF filled)
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                Helpers.FillArray(sectorToWrite, (byte)0x00);
+                                Helpers.FillArray(sectorToWrite, Constants.XISO_PAD_BYTE);
                             }
 
                             // Try to compress the sector

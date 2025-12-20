@@ -23,7 +23,27 @@ namespace XboxToolkit.Internal
 
         public const uint SVOD_START_SECTOR = XGD_ISO_BASE_SECTOR;
 
+        // Xbox Original root directory sector (matches extract-xiso)
+        public const uint XISO_ROOT_DIRECTORY_SECTOR = 0x108;
+
         public const uint NXE_CONTAINER_TYPE = 0x4000;
         public const uint GOD_CONTAINER_TYPE = 0x7000;
+        
+        // Padding byte used in XISO format (matches extract-xiso)
+        public const byte XISO_PAD_BYTE = 0xFF;
+        
+        // XISO file modulus for padding (matches extract-xiso)
+        public const uint XISO_FILE_MODULUS = 0x10000; // 65536 bytes
+        
+        // ECMA-119 volume descriptor offsets (matches extract-xiso)
+        public const uint ECMA_119_DATA_AREA_START = 0x8000; // Sector 0x10
+        public const uint ECMA_119_VOLUME_SPACE_SIZE = ECMA_119_DATA_AREA_START + 80;
+        public const uint ECMA_119_VOLUME_SET_SIZE = ECMA_119_DATA_AREA_START + 120;
+        public const uint ECMA_119_VOLUME_SET_IDENTIFIER = ECMA_119_DATA_AREA_START + 190;
+        public const uint ECMA_119_VOLUME_CREATION_DATE = ECMA_119_DATA_AREA_START + 813;
+        
+        // XISO optimized tag (matches extract-xiso)
+        public const uint XISO_OPTIMIZED_TAG_OFFSET = 31337;
+        public const string XISO_OPTIMIZED_TAG = "in!xiso!";
     }
 }

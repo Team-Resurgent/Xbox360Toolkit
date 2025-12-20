@@ -7,6 +7,8 @@ namespace XboxToolkit.Internal.ContainerBuilder
         private readonly uint mBaseSector;
         private uint mDirectoryStartSector;
         private bool mDirectoriesAllocated;
+        private uint mFixedRootDirSector;
+        private uint mFixedRootDirSectors;
 
         public SectorAllocator(uint magicSector, uint baseSector)
         {
@@ -14,6 +16,14 @@ namespace XboxToolkit.Internal.ContainerBuilder
             mBaseSector = baseSector;
             mCurrentSector = baseSector;
             mDirectoriesAllocated = false;
+            mFixedRootDirSector = 0;
+            mFixedRootDirSectors = 0;
+        }
+
+        public void SetFixedRootDirectory(uint sector, uint sectors)
+        {
+            mFixedRootDirSector = sector;
+            mFixedRootDirSectors = sectors;
         }
 
         public uint AllocateSectors(uint count)
@@ -47,18 +57,35 @@ namespace XboxToolkit.Internal.ContainerBuilder
 
         public uint AllocateFileSectors(uint count)
         {
+            // ALWAYS check if allocation would conflict with fixed root directory (regardless of current sector)
+            if (mFixedRootDirSector > 0)
+            {
+                // Check if current allocation overlaps with fixed root directory
+                // Overlap occurs if allocation starts before the end of fixed root directory AND ends after the start
+                var allocationStart = mCurrentSector;
+                var allocationEnd = mCurrentSector + count;
+                var fixedRootDirEnd = mFixedRootDirSector + mFixedRootDirSectors;
+                
+                // Check for overlap: allocation overlaps if it starts before fixed root ends AND ends after fixed root starts
+                if (allocationStart < fixedRootDirEnd && allocationEnd > mFixedRootDirSector)
+                {
+                    // Skip past fixed root directory
+                    mCurrentSector = fixedRootDirEnd;
+                }
+            }
+            
             // Try to allocate files in the gap between base sector and magic sector first
             // If that space is full, allocate after magic sector (and after directories if they exist)
             if (mCurrentSector < mMagicSector)
             {
-                // Check if we can fit in the gap before magic sector
-                if (mCurrentSector + count <= mMagicSector)
+                // Check if we can fit in the gap before magic sector (after skipping fixed root directory if needed)
+                if (mCurrentSector < mMagicSector && mCurrentSector + count <= mMagicSector)
                 {
                     var startSector = mCurrentSector;
                     mCurrentSector += count;
                     return startSector;
                 }
-                else
+                else if (mCurrentSector < mMagicSector)
                 {
                     // Gap is too small, skip to after magic sector
                     mCurrentSector = mMagicSector + 1;
