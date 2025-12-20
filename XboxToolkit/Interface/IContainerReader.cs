@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace XboxToolkit.Interface
@@ -8,7 +9,7 @@ namespace XboxToolkit.Interface
         public bool TryMount();
         public void Dismount();
         public int GetMountCount();
-        public bool TryExtractFiles(string destFilePath);
+        public bool TryExtractFiles(string destFilePath, Action<string>? progress = null);
         public bool TryGetDataSectors(out HashSet<uint> dataSectors);
         public bool TryGetDefault(out byte[] defaultData, out ContainerType containerType);
     }

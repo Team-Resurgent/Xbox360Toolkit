@@ -50,14 +50,14 @@ namespace XboxToolkit
             return false;
         }
 
-        public static bool ExtractFilesFromContainer(ContainerReader containerReader, string destFilePath)
+        public static bool ExtractFilesFromContainer(ContainerReader containerReader, string destFilePath, Action<string>? progress = null)
         {
             if (containerReader.GetMountCount() == 0)
             {
                 return false;
             }
 
-            if (containerReader.TryExtractFiles(destFilePath) == false)
+            if (containerReader.TryExtractFiles(destFilePath, progress) == false)
             {
                 return false;
             }
