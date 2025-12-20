@@ -234,7 +234,7 @@ namespace XboxToolkit.Interface
                 dataSectors.Add(xgdInfo.BaseSector + Constants.XGD_ISO_BASE_SECTOR);
                 dataSectors.Add(xgdInfo.BaseSector + Constants.XGD_ISO_BASE_SECTOR + 1);
 
-                var rootSectors = xgdInfo.RootDirSize / Constants.XGD_SECTOR_SIZE;
+                var rootSectors = (xgdInfo.RootDirSize + Constants.XGD_SECTOR_SIZE - 1) / Constants.XGD_SECTOR_SIZE;
                 var rootData = new byte[xgdInfo.RootDirSize];
                 for (var i = 0; i < rootSectors; i++)
                 {
@@ -244,7 +244,9 @@ namespace XboxToolkit.Interface
                     {
                         return false;
                     }
-                    Array.Copy(sectorData, 0, rootData, i * Constants.XGD_SECTOR_SIZE, Constants.XGD_SECTOR_SIZE);
+                    var offset = i * Constants.XGD_SECTOR_SIZE;
+                    var length = Math.Min(Constants.XGD_SECTOR_SIZE, xgdInfo.RootDirSize - offset);
+                    Array.Copy(sectorData, 0, rootData, offset, length);
                 }
 
                 var treeNodes = new List<TreeNodeInfo>
@@ -259,8 +261,9 @@ namespace XboxToolkit.Interface
 
                 while (treeNodes.Count > 0)
                 {
-                    var currentTreeNode = treeNodes[0];
-                    treeNodes.RemoveAt(0);
+                    // Use stack (LIFO) for preorder traversal - pop from end
+                    var currentTreeNode = treeNodes[treeNodes.Count - 1];
+                    treeNodes.RemoveAt(treeNodes.Count - 1);
 
                     using (var directoryDataStream = new MemoryStream(currentTreeNode.DirectoryData))
                     using (var directoryDataDataReader = new BinaryReader(directoryDataStream))
@@ -271,38 +274,62 @@ namespace XboxToolkit.Interface
                             continue;
                         }
 
-                        directoryDataStream.Position = currentTreeNode.Offset * 4;
+                        var entryOffset = currentTreeNode.Offset * 4;
+                        directoryDataStream.Position = entryOffset;
 
-                        var left = directoryDataDataReader.ReadUInt16();
-                        var right = directoryDataDataReader.ReadUInt16();
-                        var sector = directoryDataDataReader.ReadUInt32();
-                        var size = directoryDataDataReader.ReadUInt32();
-                        var attribute = directoryDataDataReader.ReadByte();
-                        var nameLength = directoryDataDataReader.ReadByte();
-                        var filenameBytes = directoryDataDataReader.ReadBytes(nameLength);
-                        var filename = Encoding.ASCII.GetString(filenameBytes);
-
-                        if (left == 0xFFFF)
+                        // Read first 14 bytes (DirectoryEntryDiskNode structure)
+                        var headerBuffer = new byte[14];
+                        if (directoryDataStream.Read(headerBuffer, 0, 14) != 14)
                         {
                             continue;
                         }
 
-                        if (left != 0)
+                        // Check if entry is empty (all 0xFF or all 0x00) - matches xdvdfs deserialize check
+                        bool allFF = true;
+                        bool allZero = true;
+                        for (int i = 0; i < 14; i++)
                         {
-                            treeNodes.Add(new TreeNodeInfo
-                            {
-                                DirectoryData = currentTreeNode.DirectoryData,
-                                Offset = left,
-                                Path = currentTreeNode.Path
-                            });
+                            if (headerBuffer[i] != 0xFF) allFF = false;
+                            if (headerBuffer[i] != 0x00) allZero = false;
+                        }
+                        if (allFF || allZero)
+                        {
+                            continue;
                         }
 
+                        // Parse the header from buffer (matches xdvdfs deserialize)
+                        // xdvdfs uses little-endian deserialization
+                        var left = (ushort)(headerBuffer[0] | (headerBuffer[1] << 8));
+                        var right = (ushort)(headerBuffer[2] | (headerBuffer[3] << 8));
+                        var sector = (uint)(headerBuffer[4] | (headerBuffer[5] << 8) | (headerBuffer[6] << 16) | (headerBuffer[7] << 24));
+                        var size = (uint)(headerBuffer[8] | (headerBuffer[9] << 8) | (headerBuffer[10] << 16) | (headerBuffer[11] << 24));
+                        var attribute = headerBuffer[12];
+                        var nameLength = headerBuffer[13];
+
+                        // Validate nameLength is reasonable
+                        if (nameLength == 0 || nameLength > 255)
+                        {
+                            continue;
+                        }
+
+                        // Validate we have enough bytes to read the filename
+                        var filenameOffset = entryOffset + 14; // 0xe in xdvdfs
+                        if (filenameOffset + nameLength > directoryDataStream.Length)
+                        {
+                            continue;
+                        }
+
+                        // Read filename at offset + 0xe (matches xdvdfs read_from_disk)
+                        directoryDataStream.Position = filenameOffset;
+                        var filenameBytes = directoryDataDataReader.ReadBytes(nameLength);
+                        var filename = Encoding.ASCII.GetString(filenameBytes);
+
+                        // Process current entry first (preorder traversal)
                         if (size > 0)
                         {
-
                             if ((attribute & 0x10) != 0)
                             {
-                                var directorySectors = size / Constants.XGD_SECTOR_SIZE;
+                                var directorySectors = (size + Constants.XGD_SECTOR_SIZE - 1) / Constants.XGD_SECTOR_SIZE;
                                 var directoryData = new byte[size];
                                 for (var i = 0; i < directorySectors; i++)
                                 {
@@ -312,7 +339,9 @@ namespace XboxToolkit.Interface
                                     {
                                         return false;
                                     }
-                                    Array.Copy(sectorData, 0, directoryData, i * Constants.XGD_SECTOR_SIZE, Constants.XGD_SECTOR_SIZE);
+                                    var offset = i * Constants.XGD_SECTOR_SIZE;
+                                    var length = Math.Min(Constants.XGD_SECTOR_SIZE, size - offset);
+                                    Array.Copy(sectorData, 0, directoryData, offset, length);
                                 }
 
                                 treeNodes.Add(new TreeNodeInfo
@@ -333,14 +362,35 @@ namespace XboxToolkit.Interface
                             }
                         }
 
-                        if (right != 0)
+                        // Push right first, then left (so left is processed first when popping)
+                        // Validate right offset is within bounds
+                        if (right != 0 && right != 0xFFFF)
                         {
-                            treeNodes.Add(new TreeNodeInfo
+                            var rightOffsetBytes = right * 4;
+                            if (rightOffsetBytes < directoryDataStream.Length)
                             {
-                                DirectoryData = currentTreeNode.DirectoryData,
-                                Offset = right,
-                                Path = currentTreeNode.Path
-                            });
+                                treeNodes.Add(new TreeNodeInfo
+                                {
+                                    DirectoryData = currentTreeNode.DirectoryData,
+                                    Offset = right,
+                                    Path = currentTreeNode.Path
+                                });
+                            }
+                        }
+
+                        // Validate left offset is within bounds
+                        if (left != 0 && left != 0xFFFF)
+                        {
+                            var leftOffsetBytes = left * 4;
+                            if (leftOffsetBytes < directoryDataStream.Length)
+                            {
+                                treeNodes.Add(new TreeNodeInfo
+                                {
+                                    DirectoryData = currentTreeNode.DirectoryData,
+                                    Offset = left,
+                                    Path = currentTreeNode.Path
+                                });
+                            }
                         }
                     }
                 }
@@ -363,7 +413,7 @@ namespace XboxToolkit.Interface
                 var decoder = GetDecoder();
                 var xgdInfo = decoder.GetXgdInfo();
 
-                var rootSectors = xgdInfo.RootDirSize / Constants.XGD_SECTOR_SIZE;
+                var rootSectors = (xgdInfo.RootDirSize + Constants.XGD_SECTOR_SIZE - 1) / Constants.XGD_SECTOR_SIZE;
                 var rootData = new byte[xgdInfo.RootDirSize];
                 for (var i = 0; i < rootSectors; i++)
                 {
@@ -371,7 +421,9 @@ namespace XboxToolkit.Interface
                     {
                         return false;
                     }
-                    Array.Copy(sectorData, 0, rootData, i * Constants.XGD_SECTOR_SIZE, Constants.XGD_SECTOR_SIZE);
+                    var offset = i * Constants.XGD_SECTOR_SIZE;
+                    var length = Math.Min(Constants.XGD_SECTOR_SIZE, xgdInfo.RootDirSize - offset);
+                    Array.Copy(sectorData, 0, rootData, offset, length);
                 }
 
                 var treeNodes = new List<TreeNodeInfo>
@@ -386,8 +438,9 @@ namespace XboxToolkit.Interface
 
                 while (treeNodes.Count > 0)
                 {
-                    var currentTreeNode = treeNodes[0];
-                    treeNodes.RemoveAt(0);
+                    // Use stack (LIFO) for preorder traversal - pop from end
+                    var currentTreeNode = treeNodes[treeNodes.Count - 1];
+                    treeNodes.RemoveAt(treeNodes.Count - 1);
 
                     using (var directoryDataStream = new MemoryStream(currentTreeNode.DirectoryData))
                     using (var directoryDataDataReader = new BinaryReader(directoryDataStream))
@@ -398,17 +451,56 @@ namespace XboxToolkit.Interface
                             continue;
                         }
 
-                        directoryDataStream.Position = currentTreeNode.Offset * 4;
+                        var entryOffset = currentTreeNode.Offset * 4;
+                        directoryDataStream.Position = entryOffset;
 
-                        var left = directoryDataDataReader.ReadUInt16();
-                        var right = directoryDataDataReader.ReadUInt16();
-                        var sector = directoryDataDataReader.ReadUInt32();
-                        var size = directoryDataDataReader.ReadUInt32();
-                        var attribute = directoryDataDataReader.ReadByte();
-                        var nameLength = directoryDataDataReader.ReadByte();
+                        // Read first 14 bytes (DirectoryEntryDiskNode structure)
+                        var headerBuffer = new byte[14];
+                        if (directoryDataStream.Read(headerBuffer, 0, 14) != 14)
+                        {
+                            continue;
+                        }
+
+                        // Check if entry is empty (all 0xFF or all 0x00) - matches xdvdfs deserialize check
+                        bool allFF = true;
+                        bool allZero = true;
+                        for (int i = 0; i < 14; i++)
+                        {
+                            if (headerBuffer[i] != 0xFF) allFF = false;
+                            if (headerBuffer[i] != 0x00) allZero = false;
+                        }
+                        if (allFF || allZero)
+                        {
+                            continue;
+                        }
+
+                        // Parse the header from buffer (matches xdvdfs deserialize)
+                        // xdvdfs uses little-endian deserialization
+                        var left = (ushort)(headerBuffer[0] | (headerBuffer[1] << 8));
+                        var right = (ushort)(headerBuffer[2] | (headerBuffer[3] << 8));
+                        var sector = (uint)(headerBuffer[4] | (headerBuffer[5] << 8) | (headerBuffer[6] << 16) | (headerBuffer[7] << 24));
+                        var size = (uint)(headerBuffer[8] | (headerBuffer[9] << 8) | (headerBuffer[10] << 16) | (headerBuffer[11] << 24));
+                        var attribute = headerBuffer[12];
+                        var nameLength = headerBuffer[13];
+
+                        // Validate nameLength is reasonable
+                        if (nameLength == 0 || nameLength > 255)
+                        {
+                            continue;
+                        }
+
+                        // Validate we have enough bytes to read the filename
+                        var filenameOffset = entryOffset + 14; // 0xe in xdvdfs
+                        if (filenameOffset + nameLength > directoryDataStream.Length)
+                        {
+                            continue;
+                        }
+
+                        // Read filename at offset + 0xe (matches xdvdfs read_from_disk)
+                        directoryDataStream.Position = filenameOffset;
                         var filenameBytes = directoryDataDataReader.ReadBytes(nameLength);
-
                         var filename = Encoding.ASCII.GetString(filenameBytes);
+                        
                         var isXbe = filename.Equals(Constants.XBE_FILE_NAME, StringComparison.CurrentCultureIgnoreCase);
                         var isXex = filename.Equals(Constants.XEX_FILE_NAME, StringComparison.CurrentCultureIgnoreCase);
                         if (isXbe || isXex)
@@ -426,7 +518,7 @@ namespace XboxToolkit.Interface
                                     {
                                         return false;
                                     }
-                                    var bytesToCopy = Math.Min(size - processed, 2048);
+                                    var bytesToCopy = Math.Min(size - processed, Constants.XGD_SECTOR_SIZE);
                                     Array.Copy(buffer, 0, result, processed, bytesToCopy);
                                     readSector++;
                                     processed += bytesToCopy;
@@ -436,29 +528,35 @@ namespace XboxToolkit.Interface
                             return true;
                         }
 
-                        if (left == 0xFFFF)
+                        // Push right first, then left (so left is processed first when popping)
+                        // Validate right offset is within bounds
+                        if (right != 0 && right != 0xFFFF)
                         {
-                            continue;
+                            var rightOffsetBytes = right * 4;
+                            if (rightOffsetBytes < directoryDataStream.Length)
+                            {
+                                treeNodes.Add(new TreeNodeInfo
+                                {
+                                    DirectoryData = currentTreeNode.DirectoryData,
+                                    Offset = right,
+                                    Path = currentTreeNode.Path
+                                });
+                            }
                         }
 
-                        if (left != 0)
+                        // Validate left offset is within bounds
+                        if (left != 0 && left != 0xFFFF)
                         {
-                            treeNodes.Add(new TreeNodeInfo
+                            var leftOffsetBytes = left * 4;
+                            if (leftOffsetBytes < directoryDataStream.Length)
                             {
-                                DirectoryData = currentTreeNode.DirectoryData,
-                                Offset = left,
-                                Path = currentTreeNode.Path
-                            });
-                        }
-
-                        if (right != 0)
-                        {
-                            treeNodes.Add(new TreeNodeInfo
-                            {
-                                DirectoryData = currentTreeNode.DirectoryData,
-                                Offset = right,
-                                Path = currentTreeNode.Path
-                            });
+                                treeNodes.Add(new TreeNodeInfo
+                                {
+                                    DirectoryData = currentTreeNode.DirectoryData,
+                                    Offset = left,
+                                    Path = currentTreeNode.Path
+                                });
+                            }
                         }
                     }
                 }
