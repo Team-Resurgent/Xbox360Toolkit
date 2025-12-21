@@ -46,6 +46,18 @@ namespace XboxToolkit.Internal.ContainerBuilder
             if (!mDirectoriesAllocated)
             {
                 mDirectoryStartSector = mMagicSector + 1;
+                
+                // If there's a fixed root directory, skip past it
+                if (mFixedRootDirSector > 0)
+                {
+                    var fixedRootDirEnd = mFixedRootDirSector + mFixedRootDirSectors;
+                    // Make sure we start after the fixed root directory
+                    if (mDirectoryStartSector < fixedRootDirEnd)
+                    {
+                        mDirectoryStartSector = fixedRootDirEnd;
+                    }
+                }
+                
                 mCurrentSector = mDirectoryStartSector;
                 mDirectoriesAllocated = true;
             }

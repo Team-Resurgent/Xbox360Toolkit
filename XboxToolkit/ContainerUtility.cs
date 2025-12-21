@@ -317,6 +317,11 @@ namespace XboxToolkit
                             if (currentSector == magicSector)
                             {
                                 // Write magic sector with XGD header
+                                // IMPORTANT: Do NOT write from sectorMap here - the header must not be overwritten
+                                if (sectorMap.ContainsKey(currentSector))
+                                {
+                                    throw new InvalidOperationException($"Sector {currentSector} (magic sector) is in sectorMap! This would overwrite the XGD header. This indicates a bug in sector allocation.");
+                                }
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
                                 ContainerBuilderHelper.WriteXgdHeader(sectorToWrite, rootDirSector - baseSector, rootDirSize);
                                 sectorsWithData++;
@@ -337,11 +342,12 @@ namespace XboxToolkit
                                     Helpers.FillArray(sectorToWrite, Constants.XISO_PAD_BYTE);
                                 }
                             }
-                            else if (isoFormat == ISOFormat.XboxOriginal && currentSector < Constants.XISO_FILE_MODULUS / Constants.XGD_SECTOR_SIZE)
+                            else if (isoFormat == ISOFormat.XboxOriginal && currentSector < Constants.XISO_ROOT_DIRECTORY_SECTOR)
                             {
-                                // For Xbox Original, baseSector is 0, so we need to handle first 32 sectors separately
-                                // extract-xiso writes zeros (0x00) for XISO_HEADER_OFFSET (0x10000 bytes = 32 sectors)
-                                // But the optimized tag at offset 31337 is written later, so we'll leave it as zeros for now
+                                // For Xbox Original, baseSector is 0, so we need to handle sectors before root directory separately
+                                // extract-xiso writes zeros (0x00) for sectors before the root directory (sector 0x108)
+                                // The first 32 sectors (0x10000 bytes) are zeros, and sectors 0x21-0x107 are also zeros
+                                // The optimized tag at offset 31337 is written later, so we'll leave it as zeros for now
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
                                 Helpers.FillArray(sectorToWrite, (byte)0x00);
                             }
@@ -396,21 +402,6 @@ namespace XboxToolkit
                             
                             // Write volume descriptors at sector 0x10 (offset 0x8000) - matches extract-xiso line 1064
                             WriteVolumeDescriptors(outputStream, totalSectorsAfterPadding);
-                            
-                            // Write optimized tag at offset 31337 - matches extract-xiso line 1066-1067
-                            // The tag is written at byte offset 31337, which is within the first 32 sectors (0x10000 bytes)
-                            // extract-xiso writes this after padding, overwriting the zeros we wrote earlier
-                            // extract-xiso writes: "in!xiso!" + version string "2.7.1 (01.11.14)" (8 + 16 = 24 bytes total)
-                            var currentPosBeforeTag = outputStream.Position;
-                            outputStream.Seek(Constants.XISO_OPTIMIZED_TAG_OFFSET, SeekOrigin.Begin);
-                            var tagBytes = Encoding.ASCII.GetBytes(Constants.XISO_OPTIMIZED_TAG);
-                            outputWriter.Write(tagBytes);
-                            // Write version string "2.7.1 (01.11.14)" (16 bytes) - matches extract-xiso
-                            var versionString = "2.7.1 (01.11.14)";
-                            var versionBytes = Encoding.ASCII.GetBytes(versionString);
-                            outputWriter.Write(versionBytes);
-                            // Restore position after writing tag
-                            outputStream.Seek(currentPosBeforeTag, SeekOrigin.Begin);
                         }
 
                     }

@@ -41,9 +41,5 @@ namespace XboxToolkit.Internal
         public const uint ECMA_119_VOLUME_SET_SIZE = ECMA_119_DATA_AREA_START + 120;
         public const uint ECMA_119_VOLUME_SET_IDENTIFIER = ECMA_119_DATA_AREA_START + 190;
         public const uint ECMA_119_VOLUME_CREATION_DATE = ECMA_119_DATA_AREA_START + 813;
-        
-        // XISO optimized tag (matches extract-xiso)
-        public const uint XISO_OPTIMIZED_TAG_OFFSET = 31337;
-        public const string XISO_OPTIMIZED_TAG = "in!xiso!";
     }
 }

@@ -180,7 +180,9 @@ namespace XboxToolkit.Internal.ContainerBuilder
                     // Skip files with empty names
                     continue;
                 }
-                entries.Add((false, fileName, file.Sector, file.Size, string.Empty));
+                // IMPORTANT: file.Sector is relative to baseSector, but directory entries need absolute sector numbers
+                var fileAbsoluteSector = file.Sector + baseSector; // Convert to absolute sector
+                entries.Add((false, fileName, fileAbsoluteSector, file.Size, string.Empty));
             }
 
             foreach (var subdir in directory.Subdirectories)
@@ -197,9 +199,11 @@ namespace XboxToolkit.Internal.ContainerBuilder
                 
                 // Add subdirectory to entries - even if it's empty, it should still be in the parent's entry list
                 // For directories, file_size in entry = directory_size + padding to sector boundary (matches extract-xiso)
+                // IMPORTANT: subdir.Sector is relative to baseSector, but directory entries need absolute sector numbers
                 var subdirSize = directorySizes[subdir.Path];
                 var subdirSizeWithPadding = subdirSize + (Constants.XGD_SECTOR_SIZE - (subdirSize % Constants.XGD_SECTOR_SIZE)) % Constants.XGD_SECTOR_SIZE;
-                entries.Add((true, dirName, subdir.Sector, subdirSizeWithPadding, subdir.Path));
+                var subdirAbsoluteSector = subdir.Sector + baseSector; // Convert to absolute sector
+                entries.Add((true, dirName, subdirAbsoluteSector, subdirSizeWithPadding, subdir.Path));
             }
 
             // Sort entries by name for binary tree
