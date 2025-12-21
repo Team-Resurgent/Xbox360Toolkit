@@ -521,5 +521,209 @@ public class TestDirectorySetupTests
         // Generated ISO remains after test as requested
     }
 
+    [Fact]
+    public void GeneratedCci_CanExtractAllFiles()
+    {
+        // Arrange
+        var solutionRoot = FindSolutionRoot();
+        var testsDirectory = Path.Combine(solutionRoot, "tests");
+        var generatedCciPath = Path.Combine(testsDirectory, "TestDirectory_Generated.cci");
+        var extractedDirectoryPath = Path.Combine(testsDirectory, "TestDirectory_Extracted");
+        
+        // Clean up previous generated CCI and extracted directory before running the test
+        if (File.Exists(generatedCciPath))
+        {
+            File.Delete(generatedCciPath);
+        }
+        if (Directory.Exists(extractedDirectoryPath))
+        {
+            Directory.Delete(extractedDirectoryPath, true);
+        }
+        
+        // Act - Generate CCI from TestDirectory using C# code
+        bool success;
+        try
+        {
+            success = ContainerUtility.ConvertFolderToCCI(
+                TestDirectoryPath,
+                ISOFormat.XboxOriginal,
+                generatedCciPath,
+                0, // No split point
+                null // No progress callback
+            );
+        }
+        catch (Exception ex)
+        {
+            Assert.Fail($"CCI generation threw an exception: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            return;
+        }
+        
+        // Assert CCI was created successfully
+        Assert.True(Directory.Exists(TestDirectoryPath), $"Test directory should exist at: {TestDirectoryPath}");
+        Assert.True(success, "CCI generation should succeed");
+        Assert.True(File.Exists(generatedCciPath), $"Generated CCI should exist at: {generatedCciPath}");
+        
+        // Mount and extract files from CCI
+        using var cciReader = new CCIContainerReader(generatedCciPath);
+        Assert.True(cciReader.TryMount(), "CCI should mount successfully");
+        
+        try
+        {
+            Assert.True(ContainerUtility.ExtractFilesFromContainer(cciReader, extractedDirectoryPath), 
+                "Files should extract successfully from CCI");
+        }
+        finally
+        {
+            cciReader.Dismount();
+        }
+        
+        Assert.True(Directory.Exists(extractedDirectoryPath), $"Extracted directory should exist at: {extractedDirectoryPath}");
+        
+        // Compare file structure between original and extracted
+        var originalFiles = GetAllFiles(TestDirectoryPath);
+        var extractedFiles = GetAllFiles(extractedDirectoryPath);
+        
+        // Normalize paths for comparison (remove TestDirectory prefix from original, remove TestDirectory_Extracted from extracted)
+        var originalRelativeFiles = originalFiles.Select(f => 
+            Path.GetRelativePath(TestDirectoryPath, f).Replace('\\', '/')).OrderBy(f => f).ToList();
+        var extractedRelativeFiles = extractedFiles.Select(f => 
+            Path.GetRelativePath(extractedDirectoryPath, f).Replace('\\', '/')).OrderBy(f => f).ToList();
+        
+        // Debug output
+        Console.WriteLine($"Original directory file count: {originalRelativeFiles.Count}");
+        Console.WriteLine($"Extracted directory file count: {extractedRelativeFiles.Count}");
+        
+        Console.WriteLine($"\nOriginal files ({originalRelativeFiles.Count} total):");
+        foreach (var file in originalRelativeFiles)
+        {
+            Console.WriteLine($"  - {file}");
+        }
+        
+        Console.WriteLine($"\nExtracted files ({extractedRelativeFiles.Count} total):");
+        foreach (var file in extractedRelativeFiles)
+        {
+            Console.WriteLine($"  - {file}");
+        }
+        
+        // Compare file lists
+        var missingInExtracted = originalRelativeFiles.Except(extractedRelativeFiles).ToList();
+        var extraInExtracted = extractedRelativeFiles.Except(originalRelativeFiles).ToList();
+        
+        if (missingInExtracted.Count > 0 || extraInExtracted.Count > 0)
+        {
+            var diffMessage = "File listing comparison found differences:\n";
+            if (missingInExtracted.Count > 0)
+            {
+                diffMessage += $"  Missing in extracted CCI ({missingInExtracted.Count} files):\n";
+                foreach (var file in missingInExtracted.Take(20))
+                {
+                    diffMessage += $"    - {file}\n";
+                }
+                if (missingInExtracted.Count > 20)
+                {
+                    diffMessage += $"    ... and {missingInExtracted.Count - 20} more\n";
+                }
+            }
+            if (extraInExtracted.Count > 0)
+            {
+                diffMessage += $"  Extra in extracted CCI ({extraInExtracted.Count} files):\n";
+                foreach (var file in extraInExtracted.Take(20))
+                {
+                    diffMessage += $"    + {file}\n";
+                }
+                if (extraInExtracted.Count > 20)
+                {
+                    diffMessage += $"    ... and {extraInExtracted.Count - 20} more\n";
+                }
+            }
+            Assert.Fail(diffMessage);
+        }
+        
+        // Compare file sizes and contents
+        foreach (var originalFile in originalFiles)
+        {
+            var relativePath = Path.GetRelativePath(TestDirectoryPath, originalFile).Replace('\\', '/');
+            var extractedFile = Path.Combine(extractedDirectoryPath, relativePath);
+            
+            Assert.True(File.Exists(extractedFile), $"Extracted file should exist: {relativePath}");
+            
+            var originalInfo = new FileInfo(originalFile);
+            var extractedInfo = new FileInfo(extractedFile);
+            
+            Assert.True(originalInfo.Length == extractedInfo.Length, 
+                $"File size should match for {relativePath}. Original: {originalInfo.Length}, Extracted: {extractedInfo.Length}");
+            
+            // Compare file contents byte-by-byte
+            using var originalStream = File.OpenRead(originalFile);
+            using var extractedStream = File.OpenRead(extractedFile);
+            
+            Assert.True(originalStream.Length == extractedStream.Length, 
+                $"Stream lengths should match for {relativePath}");
+            
+            const int bufferSize = 1024 * 1024; // 1MB buffer
+            var originalBuffer = new byte[bufferSize];
+            var extractedBuffer = new byte[bufferSize];
+            var offset = 0L;
+            
+            while (offset < originalStream.Length)
+            {
+                var bytesToRead = (int)Math.Min(bufferSize, originalStream.Length - offset);
+                var originalBytesRead = originalStream.Read(originalBuffer, 0, bytesToRead);
+                var extractedBytesRead = extractedStream.Read(extractedBuffer, 0, bytesToRead);
+                
+                Assert.True(originalBytesRead == extractedBytesRead, 
+                    $"Bytes read should match for {relativePath} at offset {offset}");
+                
+                for (int i = 0; i < originalBytesRead; i++)
+                {
+                    if (originalBuffer[i] != extractedBuffer[i])
+                    {
+                        Assert.Fail($"File content mismatch for {relativePath} at offset {offset + i}. " +
+                            $"Original: 0x{originalBuffer[i]:X2}, Extracted: 0x{extractedBuffer[i]:X2}");
+                    }
+                }
+                
+                offset += originalBytesRead;
+            }
+        }
+        
+        // Clean up extracted directory after test (but keep the CCI)
+        if (Directory.Exists(extractedDirectoryPath))
+        {
+            Directory.Delete(extractedDirectoryPath, true);
+        }
+    }
+    
+    /// <summary>
+    /// Gets all files recursively from a directory.
+    /// </summary>
+    /// <param name="directoryPath">The directory to scan.</param>
+    /// <returns>List of all file paths.</returns>
+    private static List<string> GetAllFiles(string directoryPath)
+    {
+        var files = new List<string>();
+        
+        if (!Directory.Exists(directoryPath))
+        {
+            return files;
+        }
+        
+        try
+        {
+            files.AddRange(Directory.GetFiles(directoryPath));
+            
+            foreach (var subdirectory in Directory.GetDirectories(directoryPath))
+            {
+                files.AddRange(GetAllFiles(subdirectory));
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Error scanning directory {directoryPath}: {ex.Message}", ex);
+        }
+        
+        return files;
+    }
+
 }
 

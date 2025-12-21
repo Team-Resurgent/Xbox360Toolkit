@@ -729,14 +729,37 @@ namespace XboxToolkit
                             if (currentSector == magicSector)
                             {
                                 // Write magic sector with XGD header
+                                // IMPORTANT: Do NOT write from sectorMap here - the header must not be overwritten
+                                if (sectorMap.ContainsKey(currentSector))
+                                {
+                                    throw new InvalidOperationException($"Sector {currentSector} (magic sector) is in sectorMap! This would overwrite the XGD header. This indicates a bug in sector allocation.");
+                                }
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
                                 ContainerBuilderHelper.WriteXgdHeader(sectorToWrite, rootDirSector - baseSector, rootDirSize);
                             }
                             else if (currentSector < baseSector)
                             {
-                                // Scrubbed sector before base (0xFF filled)
+                                // Sectors before base - extract-xiso writes zeros (0x00) for XISO_HEADER_OFFSET (0x10000 bytes = 32 sectors)
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
-                                Helpers.FillArray(sectorToWrite, Constants.XISO_PAD_BYTE);
+                                var headerOffsetSectors = Constants.XISO_FILE_MODULUS / Constants.XGD_SECTOR_SIZE; // 32 sectors
+                                if (currentSector < headerOffsetSectors)
+                                {
+                                    // First 32 sectors (0x10000 bytes) are zeros (matches extract-xiso line 1017-1018)
+                                    Helpers.FillArray(sectorToWrite, (byte)0x00);
+                                }
+                                else
+                                {
+                                    // Rest before base are 0xFF
+                                    Helpers.FillArray(sectorToWrite, Constants.XISO_PAD_BYTE);
+                                }
+                            }
+                            else if (isoFormat == ISOFormat.XboxOriginal && currentSector < Constants.XISO_ROOT_DIRECTORY_SECTOR)
+                            {
+                                // For Xbox Original, baseSector is 0, so we need to handle sectors before root directory separately
+                                // extract-xiso writes zeros (0x00) for sectors before the root directory (sector 0x108)
+                                // The first 32 sectors (0x10000 bytes) are zeros, and sectors 0x21-0x107 are also zeros
+                                sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
+                                Helpers.FillArray(sectorToWrite, (byte)0x00);
                             }
                             else if (sectorMap.ContainsKey(currentSector))
                             {
@@ -822,7 +845,7 @@ namespace XboxToolkit
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.Print(ex.ToString());
-                return false;
+                throw new InvalidOperationException($"CCI generation failed: {ex.Message}", ex);
             }
         }
 
