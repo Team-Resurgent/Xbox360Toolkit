@@ -34,12 +34,5 @@ namespace XboxToolkit.Internal
         
         // XISO file modulus for padding (matches extract-xiso)
         public const uint XISO_FILE_MODULUS = 0x10000; // 65536 bytes
-        
-        // ECMA-119 volume descriptor offsets (matches extract-xiso)
-        public const uint ECMA_119_DATA_AREA_START = 0x8000; // Sector 0x10
-        public const uint ECMA_119_VOLUME_SPACE_SIZE = ECMA_119_DATA_AREA_START + 80;
-        public const uint ECMA_119_VOLUME_SET_SIZE = ECMA_119_DATA_AREA_START + 120;
-        public const uint ECMA_119_VOLUME_SET_IDENTIFIER = ECMA_119_DATA_AREA_START + 190;
-        public const uint ECMA_119_VOLUME_CREATION_DATE = ECMA_119_DATA_AREA_START + 813;
     }
 }

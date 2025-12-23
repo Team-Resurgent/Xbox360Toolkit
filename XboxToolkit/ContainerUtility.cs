@@ -347,7 +347,6 @@ namespace XboxToolkit
                                 // For Xbox Original, baseSector is 0, so we need to handle sectors before root directory separately
                                 // extract-xiso writes zeros (0x00) for sectors before the root directory (sector 0x108)
                                 // The first 32 sectors (0x10000 bytes) are zeros, and sectors 0x21-0x107 are also zeros
-                                // The optimized tag at offset 31337 is written later, so we'll leave it as zeros for now
                                 sectorToWrite = new byte[Constants.XGD_SECTOR_SIZE];
                                 Helpers.FillArray(sectorToWrite, (byte)0x00);
                             }
@@ -382,7 +381,6 @@ namespace XboxToolkit
                         // 1. Pad to 0x10000 boundary
                         // 2. Calculate total sectors from final file size
                         // 3. Write volume descriptors at sector 0x10 (offset 0x8000)
-                        // 4. Write optimized tag at offset 31337
                         if (isoFormat == ISOFormat.XboxOriginal && !splitting)
                         {
                             // First, pad to 0x10000 boundary (matches extract-xiso line 1062)
@@ -394,14 +392,6 @@ namespace XboxToolkit
                                 Helpers.FillArray(padding, Constants.XISO_PAD_BYTE);
                                 outputWriter.Write(padding);
                             }
-                            
-                            // Calculate total sectors after padding (matches extract-xiso line 1064)
-                            // This is: (position_after_padding) / XISO_SECTOR_SIZE
-                            var finalPos = outputStream.Position;
-                            var totalSectorsAfterPadding = (uint)(finalPos / Constants.XGD_SECTOR_SIZE);
-                            
-                            // Write volume descriptors at sector 0x10 (offset 0x8000) - matches extract-xiso line 1064
-                            WriteVolumeDescriptors(outputStream, totalSectorsAfterPadding);
                         }
 
                     }
@@ -427,58 +417,6 @@ namespace XboxToolkit
                 System.Diagnostics.Debug.Print(ex.ToString());
                 return false;
             }
-        }
-
-        /// <summary>
-        /// Writes ECMA-119 volume descriptors at sector 0x10 (offset 0x8000) - matches extract-xiso write_volume_descriptors.
-        /// </summary>
-        private static void WriteVolumeDescriptors(Stream stream, uint totalSectors)
-        {
-            // Convert total sectors to big-endian and little-endian
-            var little = totalSectors; // Little-endian (native on Windows)
-            var bigBytes = BitConverter.GetBytes(totalSectors);
-            Array.Reverse(bigBytes);
-            var big = BitConverter.ToUInt32(bigBytes, 0); // Big-endian
-            
-            var date = "0000000000000000";
-            var spacesSize = (int)(Constants.ECMA_119_VOLUME_CREATION_DATE - Constants.ECMA_119_VOLUME_SET_IDENTIFIER);
-            var spaces = new byte[spacesSize];
-            Helpers.FillArray(spaces, (byte)0x20); // Space character
-            
-            // Write primary volume descriptor at ECMA_119_DATA_AREA_START (sector 0x10, offset 0x8000)
-            stream.Seek(Constants.ECMA_119_DATA_AREA_START, SeekOrigin.Begin);
-            stream.Write(new byte[] { 0x01 }, 0, 1); // Volume descriptor type
-            stream.Write(Encoding.ASCII.GetBytes("CD001"), 0, 5); // Standard identifier
-            stream.Write(new byte[] { 0x01 }, 0, 1); // Volume descriptor version
-            
-            // Write volume space size (little-endian then big-endian)
-            stream.Seek(Constants.ECMA_119_VOLUME_SPACE_SIZE, SeekOrigin.Begin);
-            stream.Write(BitConverter.GetBytes(little), 0, 4);
-            stream.Write(BitConverter.GetBytes(big), 0, 4);
-            
-            // Write volume set size
-            stream.Seek(Constants.ECMA_119_VOLUME_SET_SIZE, SeekOrigin.Begin);
-            stream.Write(new byte[] { 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x08, 0x08, 0x00 }, 0, 12);
-            
-            // Write volume set identifier (spaces)
-            stream.Seek(Constants.ECMA_119_VOLUME_SET_IDENTIFIER, SeekOrigin.Begin);
-            stream.Write(spaces, 0, spacesSize);
-            
-            // Write dates (4 times)
-            var dateBytes = Encoding.ASCII.GetBytes(date);
-            stream.Write(dateBytes, 0, dateBytes.Length);
-            stream.Write(dateBytes, 0, dateBytes.Length);
-            stream.Write(dateBytes, 0, dateBytes.Length);
-            stream.Write(dateBytes, 0, dateBytes.Length);
-            
-            // Write file structure version
-            stream.Write(new byte[] { 0x01 }, 0, 1);
-            
-            // Write terminator volume descriptor at next sector
-            stream.Seek(Constants.ECMA_119_DATA_AREA_START + Constants.XGD_SECTOR_SIZE, SeekOrigin.Begin);
-            stream.Write(new byte[] { 0xFF }, 0, 1); // Volume descriptor type (terminator)
-            stream.Write(Encoding.ASCII.GetBytes("CD001"), 0, 5); // Standard identifier
-            stream.Write(new byte[] { 0x01 }, 0, 1); // Volume descriptor version
         }
 
         public static bool ConvertFolderToCCI(string inputFolder, ISOFormat format, string outputFile, long splitPoint, Action<float>? progress)
